@@ -5,6 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+size_t getDeviceBlockSize()
+{
+	using namespace std;
+	const char diskblkfile[] = "~/../../sys/block/sdX/queue/physical_block_size";
+	FILE* fptr = fopen(diskblkfile,"r");
+	size_t blksize;
+	fscanf(fptr,"%lu",&blksize);
+	return blksize;
+}
+
 class BufferedFile {
 private:
 	int fd;

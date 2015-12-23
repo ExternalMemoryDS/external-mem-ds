@@ -8,7 +8,7 @@
 size_t getDeviceBlockSize()
 {
 	using namespace std;
-	const char diskblkfile[] = "~/../../sys/block/sdX/queue/physical_block_size";
+	const char diskblkfile[] = "/sys/block/sdX/queue/physical_block_size";
 	FILE* fptr = fopen(diskblkfile,"r");
 	size_t blksize;
 	fscanf(fptr,"%lu",&blksize);

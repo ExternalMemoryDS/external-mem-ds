@@ -5,10 +5,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-size_t getDeviceBlockSize()
+size_t getDeviceBlockSize(char* devicename)
 {
 	using namespace std;
-	const char diskblkfile[] = "~/../../sys/block/sdX/queue/physical_block_size";
+	const char infofilepath = "/queue/physical_block_size";
+	const char diskpath = "/sys/block/";
+	char diskblkfile[] = (char*)malloc(sizeof(char)*(strlen(infofilepath)+strlen(devicename)+strlen(diskpath)));
+	strcat(diskblkfile,diskpath);
+	strcat(diskblkfile,devicename);
+	strcat(diskblkfile,infofilepath);
 	FILE* fptr = fopen(diskblkfile,"r");
 	size_t blksize;
 	fscanf(fptr,"%lu",&blksize);

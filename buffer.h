@@ -4,13 +4,15 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
 
 size_t getDeviceBlockSize(char* devicename)
 {
 	using namespace std;
-	const char infofilepath = "/queue/physical_block_size";
-	const char diskpath = "/sys/block/";
-	char diskblkfile[] = (char*)malloc(sizeof(char)*(strlen(infofilepath)+strlen(devicename)+strlen(diskpath)));
+	const char infofilepath[] = "/queue/physical_block_size";
+	const char diskpath[] = "/sys/block/";
+	char *diskblkfile = (char*)malloc(sizeof(char)*(strlen(infofilepath)+strlen(devicename)+strlen(diskpath)));
 	strcat(diskblkfile,diskpath);
 	strcat(diskblkfile,devicename);
 	strcat(diskblkfile,infofilepath);

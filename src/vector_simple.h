@@ -16,9 +16,9 @@ private:
 	size_type sz;
 
 public:        
-	vector(const char* pathname, size_type blocksize) : block_size(blocksize), element_size(sizeof(T)), 
+	vector(const char* pathname, size_type blocksize) : block_size(blocksize), element_size(sizeof(T)),
 		sz(0), num_elements_per_block(blocksize/(sizeof(T))) {
-		buffered_file = new BufferedFile(pathname, block_size, block_size*5);
+		buffered_file = new BufferedFile(pathname, block_size, block_size*3);
 		
 		// dirty way to decode the header. reading size from header.
 		const void* tmp_header = buffered_file->readHeader();

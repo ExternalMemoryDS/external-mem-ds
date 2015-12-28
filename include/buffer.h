@@ -66,7 +66,7 @@ public:
 BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved_memory) :
 						block_size(blksize), buffer_pool_size(reserved_memory/blksize), last_block_alloted(0)
 {
-	fd = open(filepath, O_RDWR|O_CREAT|O_APPEND, 0755);
+	fd = open(filepath, O_RDWR|O_CREAT, 0755);
 	
 	if(flock(fd, LOCK_EX | LOCK_NB)==-1)
 	{
@@ -151,19 +151,21 @@ const void* BufferedFile::readBlock(long block_number)
 			block_hash.erase(alloted->block_number);
 		}
 		
+		if(alloted->is_valid && alloted->is_dirty)
+		{
+			pwrite(fd, alloted->data, block_size, getblockoffset(alloted->block_number));
+		}
+		
 		alloted->next->prev = free_list_head;
 		free_list_head->next = alloted->next;
 		alloted->next = free_list_head;
 		alloted->prev = free_list_head->prev;
 		free_list_head->prev->next = alloted;
-		
-		if(alloted->is_valid && alloted->is_dirty)
-		{
-			pwrite(fd, alloted->data, block_size, getblockoffset(alloted->block_number));
-		}
+				
 		alloted->is_valid = true;
 		alloted->is_dirty = false;
 		alloted->block_number = block_number;
+		memset(alloted->data, 0, block_size);
 		pread(fd, alloted->data, block_size, getblockoffset(block_number));
 		
 		block_hash.insert({block_number, alloted});

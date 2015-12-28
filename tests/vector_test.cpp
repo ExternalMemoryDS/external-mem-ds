@@ -3,7 +3,7 @@
 #include <functional>
 #include <iostream>
 
-#define NUM_INSERT 5
+#define NUM_INSERT 6000
 
 int main()
 {
@@ -25,7 +25,7 @@ int main()
 		std::cout << exvec[it] << std::endl;
 	}
 	
-	//exvec.clear();
+	exvec.clear();
 	
 	std::cout << std::endl;
 	std::cout << exvec.size() << std::endl;

@@ -105,13 +105,28 @@ public:
 
 	vector(const char* pathname, size_type blocksize) : block_size(blocksize), element_size(sizeof(T)), 
 		sz(0), num_elements_per_block(blocksize/(sizeof(T))) {
-		buffered_file = new BufferedFile(blocksize, pathname);	
+		buffered_file = new BufferedFile(pathname, block_size, block_size*5);
+		
+		// dirty way to decode the header. reading size from header.
+		void* tmp_header = buffered_file->readHeader();
+		sz = *((size_type*)(((char*)tmp_header) + sizeof(long)));
 	}
-	~vector() { delete buffered_file; }
+	~vector()
+	{
+		// update size of vector in header.
+		void* tmp_header = malloc(block_size);
+		memcpy(tmp_header, buffered_file->readHeader(), block_size);
+		*((size_type*)(((char*)tmp_header) + sizeof(long))) = sz;
+		buffered_file->writeHeader(tmp_header);
+		free(tmp_header);
+		
+		delete buffered_file;
+		
+	}
 	void push_back(const T& elem);
 	void pop_back();
 	void clear();
-	void insert(iterator position, const T& val);
+	//void insert(iterator position, const T& val);
 	// void insert(iterator position, std::InputIterator first, std::InputIterator last);
 	//void erase(iterator first, iterator last);
 	T& operator[] (size_type n);
@@ -292,22 +307,24 @@ void vector<T>::push_back(const T& elem) {
 	long block_number = (sz / num_elements_per_block) + 1;
 	long block_offset = (sz % num_elements_per_block) * element_size;
 
-	void* buff = malloc(block_size);
+	const void* disk_block;
 
 	if((block_offset + element_size) > block_size) {
 		long new_block = buffered_file->allotBlock();
-		buffered_file->readBlock(new_block, buff);                
+		disk_block = buffered_file->readBlock(new_block);
 	} else {
-		buffered_file->readBlock(block_number, buff);
+		disk_block = buffered_file->readBlock(block_number);
 	}	
 
 	//not sure if this is the right way do it. Right now this is just a hack!	
-	char* tmp_buff = (char*) buff;
+	void* tmp_buff = malloc(block_size);
+	memcpy(tmp_buff, disk_block, block_size);
 	memcpy(tmp_buff + block_offset, &elem, element_size);
+	//*((T*) (((char*) tmp_buff) + block_offset)) = elem;
 
-	buffered_file->writeBlock(block_number, buff);
+	buffered_file->writeBlock(block_number, tmp_buff);
 
-	free(buff);
+	free(tmp_buff);
 
 	sz++;
 }

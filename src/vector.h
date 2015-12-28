@@ -20,11 +20,13 @@ public:
 	friend class vector;
 	private:
 		size_type index;
+                vector<T>* vec;
 	public:
-		iterator(size_type i) : index(i) {}
-		iterator(const iterator& it) : index(it.index) {}
-		iterator() : index(0) {}
-		bool operator== (const iterator& rhs) { return (index == rhs.index) || (index>=sz && rhs.index>=sz) || (index<0 || rhs.index<0); }
+		iterator(size_type i, const vector<T>* v) : index(i), vec(v) {}
+		iterator(const iterator& it) : index(it.index), vec(it.vec) {}
+		iterator(const vector<T>* v) : index(0), vec(v) {}
+		iterator() : index(0), vec(nullptr) {}
+		bool operator== (const iterator& rhs) { return (index == rhs.index) || (index>=vec->sz && rhs.index>=vec->sz) || (index<0 || rhs.index<0); }
 		bool operator!= (const iterator& rhs) { return !(operator==(rhs)); }
 		T& operator* ();
 		iterator& operator++ () { index++; return *this; }
@@ -47,11 +49,13 @@ public:
 	friend class vector;
 	private:
 		size_type index;
+                vector<T>* vec;
 	public:
-		const_iterator(size_type i) : index(i) {}
-		const_iterator(const iterator& it) : index(it.index) {}
-		const_iterator() : index(0) {}
-		bool operator== (const const_iterator& rhs) { return (index == rhs.index) || (index>=sz && rhs.index>=sz) || (index<0 && rhs.index<0); }
+		const_iterator(size_type i, const vector<T>* v) : index(i), vec(v) {}
+		const_iterator(const iterator& it) : index(it.index), vec(it.vec) {}
+		const_iterator(const vector<T>* v) : index(0), vec(v) {}
+		const_iterator() : index(0), vec(nullptr) {}
+		bool operator== (const const_iterator& rhs) { return (index == rhs.index) || (index>=vec->sz && rhs.index>=vec->sz) || (index<0 && rhs.index<0); }
 		bool operator!= (const const_iterator& rhs) { return !(operator==(rhs)); }
 		const T& operator* () const;
 		const_iterator& operator++ () { index++; return *this; }
@@ -74,10 +78,12 @@ public:
 	friend class vector;
 	private:
 		size_type index;
+                vector<T>* vec;
 	public:
-		reverse_iterator(size_type i) : index(i) {}
-		reverse_iterator(const reverse_iterator& it) : index(it.index) {}
-		reverse_iterator() : index(sz-1) {}
+		reverse_iterator(size_type i, const vector<T>* v) : index(i), vec(v) {}
+		reverse_iterator(const reverse_iterator& it) : index(it.index), vec(it.vec) {}
+		reverse_iterator(const vector<T>* v) : index(v->sz-1), vec(v) {}
+		reverse_iterator() : index(-1), vec(nullptr) {}
 		bool operator== (const reverse_iterator& rhs) { return (index == rhs.index) || (index>=sz && rhs.index>=sz) || (index<0 && rhs.index<0); }
 		bool operator!= (const reverse_iterator& rhs) { return !(operator==(rhs)); }
 		T& operator* ();
@@ -107,7 +113,7 @@ public:
 	void clear();
 	void insert(iterator position, const T& val);
 	// void insert(iterator position, std::InputIterator first, std::InputIterator last);
-	void erase(iterator first, iterator last);
+	//void erase(iterator first, iterator last);
 	T& operator[] (size_type n);
 	size_type size() { return sz; }
 	iterator begin();
@@ -121,16 +127,16 @@ public:
 
 template <typename T>
 T& vector<T>::iterator::operator* () {
-	long block_number = (index / num_elements_per_block) + 1;
-	long block_offset = (index % num_elements_per_block) * element_size;
+	long block_number = (index / vec->num_elements_per_block) + 1;
+	long block_offset = (index % vec->num_elements_per_block) * vec->element_size;
 
-	void* buff = malloc(block_size);
-	buffered_file->readBlock(block_number, buff);
+	void* buff = malloc(vec->block_size);
+	vec->buffered_file->readBlock(block_number, buff);
 
 	//not sure if this is the right way do it. Right now this is just a hack!
-	T* tmp_ref = (T*) malloc(element_size);
+	T* tmp_ref = (T*) malloc(vec->element_size);
 	char* tmp_buff = (char*) buff;
-	memcpy(tmp_ref, tmp_buff + block_offset, element_size);
+	memcpy(tmp_ref, tmp_buff + block_offset, vec->element_size);
 
 	free(buff);
 
@@ -139,7 +145,7 @@ T& vector<T>::iterator::operator* () {
 
 template <typename T>
 bool vector<T>::iterator::operator>= (const vector<T>::iterator& rhs) {
-	if(index>=sz && rhs.index>=sz)
+	if(index>=vec->sz && rhs.index>=vec->sz)
 		return true;
 
 	return index >= rhs.index;
@@ -168,16 +174,16 @@ typename vector<T>::iterator vector<T>::end() {
 
 template <typename T>
 const T& vector<T>::const_iterator::operator* () const {
-	long block_number = (index / num_elements_per_block) + 1;
-	long block_offset = (index % num_elements_per_block) * element_size;
+	long block_number = (index / vec->num_elements_per_block) + 1;
+	long block_offset = (index % vec->num_elements_per_block) * vec->element_size;
 
-	void* buff = malloc(block_size);
-	buffered_file->readBlock(block_number, buff);
+	void* buff = malloc(vec->block_size);
+	vec->buffered_file->readBlock(block_number, buff);
 
 	//not sure if this is the right way do it. Right now this is just a hack!
-	T* tmp_ref = (T*) malloc(element_size);
+	T* tmp_ref = (T*) malloc(vec->element_size);
 	char* tmp_buff = (char*) buff;
-	memcpy(tmp_ref, tmp_buff + block_offset, element_size);
+	memcpy(tmp_ref, tmp_buff + block_offset, vec->element_size);
 
 	free(buff);
 
@@ -186,7 +192,7 @@ const T& vector<T>::const_iterator::operator* () const {
 
 template <typename T>
 bool vector<T>::const_iterator::operator>= (const vector<T>::const_iterator& rhs) {
-	if(index>=sz && rhs.index>=sz)
+	if(index>=vec->sz && rhs.index>=vec->sz)
 		return true;
 
 	return index >= rhs.index;
@@ -215,16 +221,16 @@ typename vector<T>::const_iterator vector<T>::cend() {
 
 template <typename T>
 T& vector<T>::reverse_iterator::operator* () {
-	long block_number = (index / num_elements_per_block) + 1;
-	long block_offset = (index % num_elements_per_block) * element_size;
+	long block_number = (index / vec->num_elements_per_block) + 1;
+	long block_offset = (index % vec->num_elements_per_block) * vec->element_size;
 
-	void* buff = malloc(block_size);
+	void* buff = malloc(vec->block_size);
 	buffered_file->readBlock(block_number, buff);
 
 	//not sure if this is the right way do it. Right now this is just a hack!
-	T* tmp_ref = (T*) malloc(element_size);
+	T* tmp_ref = (T*) malloc(vec->element_size);
 	char* tmp_buff = (char*) buff;
-	memcpy(tmp_ref, tmp_buff + block_offset, element_size);
+	memcpy(tmp_ref, tmp_buff + block_offset, vec->element_size);
 
 	free(buff);
 
@@ -233,7 +239,7 @@ T& vector<T>::reverse_iterator::operator* () {
 
 template <typename T>
 bool vector<T>::reverse_iterator::operator>= (const vector<T>::reverse_iterator& rhs) {
-	if(index>=sz && rhs.index>=sz)
+	if(index>=vec->sz && rhs.index>=vec->sz)
 		return true;
 
 	return index >= rhs.index;
@@ -290,7 +296,7 @@ void vector<T>::push_back(const T& elem) {
 
 	if((block_offset + element_size) > block_size) {
 		long new_block = buffered_file->allotBlock();
-		buffered_file->readBlock(new_block, buff);
+		buffered_file->readBlock(new_block, buff);                
 	} else {
 		buffered_file->readBlock(block_number, buff);
 	}	

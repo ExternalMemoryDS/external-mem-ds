@@ -1,5 +1,4 @@
 #include "buffer.h"
-#include <iterator>
 #include <stdexcept>
 #include <stddef.h>
 
@@ -21,46 +20,38 @@ public:
 		buffered_file = new BufferedFile(pathname, block_size, block_size*3);
 		
 		// dirty way to decode the header. reading size from header.
-		const void* tmp_header = buffered_file->readHeader();
-		sz = *((size_type*)(((char*)tmp_header) + sizeof(long)));
+		BufferedFile::BufferFrame* header = buffered_file->readHeader();
+		sz = BufferedFile::BufferedFrameReader::read<size_type>(header, sizeof(long));
 	}
 	
 	~vector()
 	{
 		// update size of vector in header.
-		void* tmp_header = malloc(block_size);
-		memcpy(tmp_header, buffered_file->readHeader(), block_size);
-		//*((size_type*)(((char*)tmp_header) + sizeof(long))) = sz;
-		char* tmp_header_char = (char*) tmp_header;
-		memcpy(tmp_header_char + sizeof(long), &sz, sizeof(size_type));
-		buffered_file->writeHeader(tmp_header);
-		free(tmp_header);
+		BufferedFile::BufferedFrameWriter::write<size_type>(buffered_file->readHeader(), sizeof(long), sz);
+		buffered_file->writeHeader();
 		
 		delete buffered_file;
-		
 	}
 	
 	void push_back(const T& elem);
 	void pop_back();
 	void clear();
-	const T& operator[] (size_type n) const;
+	T& operator[] (size_type n);
 	size_type size() { return sz; }
 };
 
 template <typename T>
-const T& vector<T>::operator[] (vector<T>::size_type n) const {
+T& vector<T>::operator[] (vector<T>::size_type n) {
 	if(n >= sz)
 		throw std::out_of_range{"vector<T>::operator[]"};
 
 	long block_number = (n / num_elements_per_block) + 1;
 	long block_offset = (n % num_elements_per_block) * element_size;
-
-	const void* buff = buffered_file->readBlock(block_number);
-
+	
+	BufferedFile::BufferFrame* buff = buffered_file->readBlock(block_number);
+	
 	//not sure if this is the right way do it. Right now this is just a hack!	
-	char* tmp_buff = (char*) buff;
-
-	return *((T*)(tmp_buff+block_offset));
+	return *(BufferedFile::BufferedFrameReader::readPtr<T>(buff, block_offset));
 }
 
 template <typename T>
@@ -68,7 +59,8 @@ void vector<T>::push_back(const T& elem) {
 	long block_number = (sz / num_elements_per_block) + 1;
 	long block_offset = (sz % num_elements_per_block) * element_size;
 
-	const void* disk_block;
+	//const void* disk_block;
+	BufferedFile::BufferFrame* disk_block;
 
 	if(block_offset==0) {
 		long new_block = buffered_file->allotBlock();
@@ -77,17 +69,10 @@ void vector<T>::push_back(const T& elem) {
 		disk_block = buffered_file->readBlock(block_number);
 	}
 
-	//not sure if this is the right way do it. Right now this is just a hack!	
-	void* tmp_buff = malloc(block_size);
-	memcpy(tmp_buff, disk_block, block_size);
-	char* tmp_buff_char = (char*) tmp_buff;
-	memcpy(tmp_buff_char + block_offset, &elem, element_size);
-	//*((T*) (((char*) tmp_buff) + block_offset)) = elem;
-
-	buffered_file->writeBlock(block_number, tmp_buff);
-
-	free(tmp_buff);
-
+	//not sure if this is the right way do it. Right now this is just a hack!
+	BufferedFile::BufferedFrameWriter::write<T>(disk_block, block_offset, elem);
+	
+	//buffered_file->writeBlock(block_number, tmp_buff);
 	sz++;
 }
 

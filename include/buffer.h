@@ -2,13 +2,12 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdio.h>
+#include <cstdio>
 #include <stddef.h>
 #include <stdint.h>
 #include <exception>
 #include <unordered_map>
-#include <vector>
-#include <string.h>
+#include <cstring>
 
 /* fixed size page buffer implementation
  * assuming one block header
@@ -18,7 +17,11 @@ class BufferedFile
 {
 	
 private:
-	struct BufferFrame {
+	class BufferFrame {
+		friend class BufferedWriter;
+		friend class BufferedFile;
+		friend class BufferedReader;
+	private:
 		bool is_valid;
 		bool is_dirty;
 		long block_number;
@@ -26,13 +29,56 @@ private:
 		const BufferedFile* file_ref;
 		
 		BufferFrame *next, *prev;
-		
+	public:
 		BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
 		BufferFrame() : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
 		~BufferFrame() { free(data); }
 		void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
-		const void* readData() { return data; }
-		void updateData(const void* new_block_data) { is_dirty = true; memcpy(data, new_block_data, file_ref->block_size); }
+	};
+	
+	class BufferedFrameWriter
+	{
+	public:
+		static void memcpy(BufferFrame* frame, const void* src, size_t offset, size_t size)
+		{
+			frame->is_dirty = true;
+			std::memcpy(((char*)frame->data + offset), src, size);
+		}
+		
+		static void memset(BufferFrame* frame, char ch, size_t offset, size_t size)
+		{
+			frame->is_dirty = true;
+			std::memset(((char*)frame->data + offset), ch, size);
+		}
+		
+		static void memmove(BufferFrame* frame, const void* src, size_t offset, size_t size)
+		{
+			frame->is_dirty = true;
+			std::memmove(((char*)frame->data + offset), src, size);
+		}
+		
+		template <typename T>
+		static T write(BufferFrame* frame, size_t offset, const T& a)
+		{
+			memcpy(frame, &a, offset, sizeof(a));
+		}
+	};
+	
+	class BufferedFrameReader
+	{
+	public:
+		template <typename T>
+		static T read(BufferFrame* frame, size_t offset)
+		{
+			return *((T*)((char*)frame->data + offset));
+		}
+		
+		template <typename T>
+		static T* readPtr(BufferFrame* frame, size_t offset)
+		{
+			frame->is_dirty = true;
+			return ((T*)((char*)frame->data + offset));
+		}
 	};
 	
 	int fd;
@@ -55,10 +101,10 @@ public:
 	// reserved_memory is the size of buffer pool in main memory to be reserved for the application.
 	BufferedFile(const char* filepath, size_t blksize = 4096, size_t reserved_memory = 1048576);
 	~BufferedFile();
-	const void* readBlock(long block_number);
-	void writeBlock(long block_number, const void* modified_page);
-	const void* readHeader(); 
-	void writeHeader(const void* header_buffer);
+	BufferFrame* readBlock(long block_number);
+	void writeBlock(long block_number);
+	BufferFrame* readHeader(); 
+	void writeHeader();
 	long allotBlock();
 	void deleteBlock(long block_number);
 };
@@ -84,7 +130,7 @@ BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved
 	header->block_number = 0;
 	pread(fd, header->data, block_size, getblockoffset(0));
 	
-	last_block_alloted = *((long*)header->readData());
+	last_block_alloted = BufferedFrameReader::read<long>(header, 0);
 	
 	free_list_head->next = frame_pool;
 	free_list_head->prev = (frame_pool + buffer_pool_size - 1);
@@ -105,15 +151,17 @@ BufferedFile::~BufferedFile()
 	long* last_block_header = (long*) header->data;
 	*last_block_header = last_block_alloted;
 	
-	pwrite(fd, header->readData(), block_size, getblockoffset(0));
+	pwrite(fd, header->data, block_size, getblockoffset(0));
 	
 	for(auto i=0; i < buffer_pool_size; i++)
 	{
 		if(frame_pool[i].is_dirty)
 		{
-			pwrite(fd, frame_pool[i].readData(), block_size, getblockoffset(frame_pool[i].block_number));
+			pwrite(fd, frame_pool[i].data, block_size, getblockoffset(frame_pool[i].block_number));
 		}
 	}
+    
+    fsync(fd);
     
 	flock(fd, LOCK_UN | LOCK_NB);
 	close(fd);
@@ -122,14 +170,15 @@ BufferedFile::~BufferedFile()
 	delete free_list_head;
 }
 
-const void* BufferedFile::readHeader()
+BufferedFile::BufferFrame* BufferedFile::readHeader()
 {
-	return header->readData();
+	return header;
 }
 
-void BufferedFile::writeHeader(const void* header_buffer)
-{
-	header->updateData(header_buffer);
+void BufferedFile::writeHeader()
+{	
+	pwrite(fd, header->data, block_size, getblockoffset(0));
+	header->is_dirty = false;
 }
 
 long BufferedFile::allotBlock()
@@ -138,7 +187,7 @@ long BufferedFile::allotBlock()
 	return last_block_alloted;
 }
 
-const void* BufferedFile::readBlock(long block_number)
+BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 {
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
 	if(got == block_hash.end())
@@ -162,15 +211,15 @@ const void* BufferedFile::readBlock(long block_number)
 		alloted->prev = free_list_head->prev;
 		free_list_head->prev->next = alloted;
 				
-		alloted->is_valid = true;
-		alloted->is_dirty = false;
+		alloted->is_valid = true;		
 		alloted->block_number = block_number;
-		memset(alloted->data, 0, block_size);
+		BufferedFrameWriter::memset(alloted, 0, 0, block_size);
+		alloted->is_dirty = false;
 		pread(fd, alloted->data, block_size, getblockoffset(block_number));
 		
 		block_hash.insert({block_number, alloted});
 		
-		return alloted->readData();
+		return alloted;
 	}
 	else
 	{
@@ -187,16 +236,19 @@ const void* BufferedFile::readBlock(long block_number)
 		free_list_head->prev->next = accessed;
 		free_list_head->prev = accessed;
 		
-		return got->second->readData();
+		return got->second;
 	}
 }
 
-void BufferedFile::writeBlock(long block_number, const void* modified_page)
+void BufferedFile::writeBlock(long block_number)
 {
-	readBlock(block_number);
-	
+	//readBlock(block_number);	
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
-	got->second->updateData(modified_page);
+	if(got!=block_hash.end() && got->second->is_valid)
+	{
+		pwrite(fd, got->second->data, block_size, getblockoffset(block_number));
+		got->second->is_dirty = false;
+	}
 }
 
 void BufferedFile::deleteBlock(long block_number) {

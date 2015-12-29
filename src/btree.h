@@ -4,17 +4,38 @@
 
 template <typename K>
 class rootNode {
+private:
+	long num_keys;	//number of keys actually present
+public:
 
+	//methods
+	V& search(const K&);
+	void insert(const K&, const V&);
+	void delete(const K&);
 };
 
 template <typename K>
 class leafNode {
+private:
+	long num_keys;	//number of keys actually present
+public:
 
+	//methods
+	V& search(const K&);
+	void insert(const K&, const V&);
+	void delete(const K&);
 };
 
 template <typename K>
 class internalNode {
+private:
+	int num_keys;	//number of keys actually present
+public:
 
+	//methods
+	V& search(const K&);
+	void insert(const K&);
+	void delete(const K&);
 };
 
 /**
@@ -38,7 +59,7 @@ public:
 private:
 	BufferedFile* buffered_file_internal;
 	BufferedFile* buffered_file_data;
-
+	bool isRootLeaf;
 	rootNode *root;
 	size_type sz;
 	long M; // Maximum M keys in the internal nodes
@@ -69,7 +90,7 @@ public:
 		delete buffered_file_data;
 	}
 
-	void search(const K& key);
+	V& search(const K& key);
 	void insert(const K& key, const V& value);
 	void delete(const K& key);
 	void clear();

@@ -25,7 +25,7 @@ int main()
 		std::cout << exvec[it] << std::endl;
 	}
 	
-	exvec.clear();
+	//exvec.clear();
 	
 	std::cout << std::endl;
 	std::cout << exvec.size() << std::endl;

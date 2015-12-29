@@ -1,9 +1,9 @@
-#include "vector_simple.h"
+#include "vector.h"
 #include <random>
 #include <functional>
 #include <iostream>
 
-#define NUM_INSERT 6000
+#define NUM_INSERT 1024
 
 int main()
 {
@@ -20,6 +20,8 @@ int main()
 	std::cout << exvec.size() << std::endl;
 	std::cout << std::endl;
 	
+        exvec.insert(2, 5);
+        
 	for (auto it = 0; it < exvec.size(); it++)
 	{
 		std::cout << exvec[it] << std::endl;

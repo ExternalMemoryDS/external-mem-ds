@@ -16,7 +16,7 @@
 class BufferedFile
 {
 	
-private:
+public:
 	class BufferFrame {
 		friend class BufferedWriter;
 		friend class BufferedFile;
@@ -86,6 +86,7 @@ private:
 		}
 	};
 	
+private:
 	int fd;
 	const size_t block_size;
 	const int buffer_pool_size;
@@ -101,7 +102,6 @@ private:
 	off_t getblockoffset(long blknbr) { return (off_t) (blknbr * block_size); }
 
 public:
-
 	// default numbers are arbitrary. change to best value.
 	// reserved_memory is the size of buffer pool in main memory to be reserved for the application.
 	BufferedFile(const char* filepath, size_t blksize = 4096, size_t reserved_memory = 1048576);
@@ -247,7 +247,6 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 
 void BufferedFile::writeBlock(long block_number)
 {
-	//readBlock(block_number);
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
 	if(got!=block_hash.end() && got->second->is_valid)
 	{
@@ -259,3 +258,7 @@ void BufferedFile::writeBlock(long block_number)
 void BufferedFile::deleteBlock(long block_number) {
 	return;
 }
+
+typedef BufferedFile::BufferFrame BufferFrame;
+typedef BufferedFile::BufferedFrameWriter BufferedFrameWriter;
+typedef BufferedFile::BufferedFrameReader BufferedFrameReader;

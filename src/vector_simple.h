@@ -20,14 +20,14 @@ public:
 		buffered_file = new BufferedFile(pathname, block_size, block_size*3);
 		
 		// dirty way to decode the header. reading size from header.
-		BufferedFile::BufferFrame* header = buffered_file->readHeader();
-		sz = BufferedFile::BufferedFrameReader::read<size_type>(header, sizeof(long));
+		BufferFrame* header = buffered_file->readHeader();
+		sz = BufferedFrameReader::read<size_type>(header, sizeof(long));
 	}
 	
 	~vector()
 	{
 		// update size of vector in header.
-		BufferedFile::BufferedFrameWriter::write<size_type>(buffered_file->readHeader(), sizeof(long), sz);
+		BufferedFrameWriter::write<size_type>(buffered_file->readHeader(), sizeof(long), sz);
 		buffered_file->writeHeader();
 		
 		delete buffered_file;
@@ -48,10 +48,10 @@ T& vector<T>::operator[] (vector<T>::size_type n) {
 	long block_number = (n / num_elements_per_block) + 1;
 	long block_offset = (n % num_elements_per_block) * element_size;
 	
-	BufferedFile::BufferFrame* buff = buffered_file->readBlock(block_number);
+	BufferFrame* buff = buffered_file->readBlock(block_number);
 	
 	//not sure if this is the right way do it. Right now this is just a hack!	
-	return *(BufferedFile::BufferedFrameReader::readPtr<T>(buff, block_offset));
+	return *(BufferedFrameReader::readPtr<T>(buff, block_offset));
 }
 
 template <typename T>
@@ -60,7 +60,7 @@ void vector<T>::push_back(const T& elem) {
 	long block_offset = (sz % num_elements_per_block) * element_size;
 
 	//const void* disk_block;
-	BufferedFile::BufferFrame* disk_block;
+	BufferFrame* disk_block;
 
 	if(block_offset==0) {
 		long new_block = buffered_file->allotBlock();
@@ -70,7 +70,7 @@ void vector<T>::push_back(const T& elem) {
 	}
 
 	//not sure if this is the right way do it. Right now this is just a hack!
-	BufferedFile::BufferedFrameWriter::write<T>(disk_block, block_offset, elem);
+	BufferedFrameWriter::write<T>(disk_block, block_offset, elem);
 	
 	//buffered_file->writeBlock(block_number, tmp_buff);
 	sz++;

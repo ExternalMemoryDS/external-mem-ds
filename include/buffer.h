@@ -13,14 +13,12 @@
  * assuming one block header
  */
 
+class BufferFrame;
+
 class BufferedFile
 {
-	
-private:
-	class BufferFrame;
-	class BufferedFrameWriter;
-	class BufferedFrameReader;
-	
+	friend class BufferFrame;
+private:	
 	int fd;
 	const size_t block_size;
 	const int buffer_pool_size;
@@ -49,10 +47,10 @@ public:
 	void deleteBlock(long block_number);
 };
 
-class BufferedFile::BufferFrame {
-	friend class BufferedWriter;
+class BufferFrame {
+	friend class BufferedFrameWriter;
 	friend class BufferedFile;
-	friend class BufferedReader;
+	friend class BufferedFrameReader;
 private:
 	bool is_valid;
 	bool is_dirty;
@@ -68,7 +66,7 @@ public:
 	void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
 };
 
-class BufferedFile::BufferedFrameWriter
+class BufferedFrameWriter
 {
 public:
 	static void memcpy(BufferFrame* frame, const void* src, size_t offset, size_t size)
@@ -96,7 +94,7 @@ public:
 	}
 };
 
-class BufferedFile::BufferedFrameReader
+class BufferedFrameReader
 {
 public:
 	template <typename T>
@@ -112,6 +110,8 @@ public:
 		return ((T*)((char*)frame->data + offset));
 	}
 };
+
+
 
 BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved_memory) :
 						block_size(blksize), buffer_pool_size(reserved_memory/blksize), last_block_alloted(0)
@@ -174,7 +174,7 @@ BufferedFile::~BufferedFile()
 	delete free_list_head;
 }
 
-BufferedFile::BufferFrame* BufferedFile::readHeader()
+BufferFrame* BufferedFile::readHeader()
 {
 	return header;
 }
@@ -191,7 +191,7 @@ long BufferedFile::allotBlock()
 	return last_block_alloted;
 }
 
-BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
+BufferFrame* BufferedFile::readBlock(long block_number)
 {
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
 	if(got == block_hash.end())

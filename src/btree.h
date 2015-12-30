@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 /*
-	Actually a B+Tree but using BTree in class names for readability	
+	Actually a B+Tree but using BTree in class names for readability
 
 
 			Class BTreeNode (Abstract)
@@ -12,16 +12,72 @@
 		LeafNode  	InternalNode
 
 	Class BTree HAS A BTreeNode root
-	BTreeLeaf contains pointers to item records
-	The Item records will form a doubly linked list
+	BTreeLeaf contains pointers(block nos and offsets) to item records
+	The leaves will form a doubly linked list
+
+*/
+
+/*
+
+	The B-Tree on the disk will be stored as one file with
+	all the internal nodes and leaf ndoes
+	and another one with the data which is pointed to by the leaves
+
+	The structure of the B-Tree key file:
+
+
+	Part of the file 				Size 			Comments
+	==========================================================================
+									HEADER
+									------
+	“RMAD”							4 bytes			Just for fun! :P
+	“BTREE”							8 bytes			Identifies the data structure
+	Element Key size 				4 bytes			generally from sizeof(K)
+	Element Value size 				4 bytes			generally from sizeof(V)
+	Root Node block number 			sizeof(long)	block no. of the root of Btree
+	Total blocks allocated  		<temp>			<temp>
+	Head block no. 					sizeof(long) 	traversing DLL in leaves
+	Tail block no. 					sizeof(long)  	traversing DLL in leaves
+	data_file’s name 				32 bytes
+
+
+									Root Node
+									---------
+	No of empty slots 				sizeof(long)
+	M keys 							M * sizeof(K)
+	M + 1 pointers 			  (M+1)*sizeof(long) 	(i.e. block numbers)
+
+								Block (internal node)
+								---------------------
+	Node-type identifier 			1 byte 			0: Internal, 1: Leaf
+	Parent node block no. 			sizeof(long)
+	No of empty slots 				sizeof(int)
+	M keys 							M * sizeof(K)
+	M + 1 pointers 			  (M+1)*sizeof(long) 	block numbers
+
+								Block (leaf node)
+								-----------------
+	Node-type identifier 			1 byte 			0: Internal, 1: Leaf
+	Prev - block no 				sizeof(long)
+	Next - block no 				sizeof(long)
+	Parent node block no.			sizeof(long)
+	No. of empty slots 				sizeof(long)
+	M keys 							M * sizeof(K)
+	M + 1 pointers 					M+1 * (sizeof(long) + sizeof(offset)
+									(i.e. block nos and offsets but in a different file)
 
 */
 
 
+
+
 template <typename K, typename V>
-class BTreeNode{
+class BTreeNode {
 private:
 	virtual void splitInternal();
+
+	// Current number of keys in the node
+	int curr_keys;
 
 protected:
 	bool isRoot;

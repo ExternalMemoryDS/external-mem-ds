@@ -2,12 +2,13 @@
 #include <random>
 #include <functional>
 #include <iostream>
+#include <vector>
 
-#define NUM_INSERT 1024
+#define NUM_INSERT 18
 
 int main()
 {
-	vector<int> exvec("./randvec", (size_t) 4096);
+	vector<int> exvec("./randvec", (size_t) 16);
 	
 	std::default_random_engine generator;
 	std::uniform_int_distribution<int> distribution(1,1000);
@@ -20,8 +21,19 @@ int main()
 	std::cout << exvec.size() << std::endl;
 	std::cout << std::endl;
 	
-        exvec.insert(2, 5);
-        
+	for (auto it = 0; it < exvec.size(); it++)
+	{
+		std::cout << exvec[it] << std::endl;
+	}
+	
+	std::cout << std::endl;
+	
+	//exvec.insert(2, 5);
+	std::vector<int> ins_vec;
+	for(auto i = 1; i<=1; i++)
+		ins_vec.push_back(dice());
+	exvec.insert(16, ins_vec.begin(), ins_vec.end());
+	
 	for (auto it = 0; it < exvec.size(); it++)
 	{
 		std::cout << exvec[it] << std::endl;

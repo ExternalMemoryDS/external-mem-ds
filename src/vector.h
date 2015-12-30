@@ -130,7 +130,9 @@ public:
 // 	void erase(iterator first, iterator last);
 	
 	void insert(size_type position, const T& elem);
-// 	void insert(iterator position, std::InputIterator first, std::InputIterator last);
+	
+	template <typename InputIterator>
+	void insert(size_type position, InputIterator first, InputIterator last);
 	
 	T& operator[] (size_type n);
 	
@@ -259,8 +261,132 @@ void vector<T>::insert(size_type position, const T& elem)
 	sz ++;
 }
 
-// template <typename T>
-// void vector<T>::insert(vector<T>::iterator position, std::InputIterator first, std::InputIterator last);
+template <typename T>
+template <typename InputIterator>
+void vector<T>::insert(size_type position, InputIterator first, InputIterator last)
+{
+	if(position > sz)
+		throw std::out_of_range{"vector::insert()"};
+	if(position == sz)
+	{
+		while(first!=last)
+		{
+			push_back(*first);
+			++first;
+		}
+		return;
+	}
+	
+	auto num_element_insert = std::distance(first, last);
+	
+	size_type new_size = sz + num_element_insert;
+	long new_last_block = ((new_size/num_elements_per_block) + 1);
+	long new_last_offset = new_size%num_elements_per_block;
+	long last_block = (((sz-1)/num_elements_per_block) + 1);	
+	
+	if(new_last_block != last_block)
+	{
+		while(new_last_block != buffered_file->allotBlock());
+		
+		BufferedFile::BufferFrame* new_disk_block;
+		BufferedFile::BufferFrame* copy_disk_block;
+		
+		const void* copy_data;
+		
+		long copy_position, copy_block, copy_offset;
+		
+		while(new_last_block > (((position + num_element_insert)/num_elements_per_block)+1))
+		{
+		
+			new_disk_block = buffered_file->readBlock(new_last_block);
+		
+			copy_position = ((new_last_block - 1)*num_elements_per_block) - num_element_insert;
+			copy_block = (copy_position/num_elements_per_block) + 1;
+			copy_offset = copy_position%num_elements_per_block;
+		
+			if(((num_elements_per_block-copy_offset)+1) < new_last_offset)
+			{
+				copy_disk_block = buffered_file->readBlock(copy_block+1);
+				copy_data = BufferedFile::BufferedFrameReader::readRawData(copy_disk_block, 0);
+				
+				BufferedFile::BufferedFrameWriter::memmove(new_disk_block, copy_data, 
+														((num_elements_per_block-copy_offset))*element_size,
+														(new_last_offset-((num_elements_per_block-copy_offset)))*element_size
+														);
+			}
+			
+			copy_disk_block = buffered_file->readBlock(copy_block);
+			copy_data = BufferedFile::BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
+			BufferedFile::BufferedFrameWriter::memmove(new_disk_block, copy_data, 0,
+													(num_elements_per_block-copy_offset)*element_size);
+			
+			new_last_block--;
+			new_last_offset = num_elements_per_block;
+		}
+		
+		new_disk_block = buffered_file->readBlock(new_last_block);
+		long new_block_offset = (position + num_element_insert) % num_elements_per_block;
+		long num_left_insert = (num_elements_per_block - new_block_offset + 1);
+		
+		copy_position = ((new_last_block-1)*num_elements_per_block) - num_element_insert + new_block_offset;
+		copy_block = (copy_position/num_elements_per_block) + 1;
+		copy_offset = copy_position%num_elements_per_block;
+		
+		if((num_elements_per_block-copy_offset+1) >= num_left_insert)
+		{
+			copy_disk_block = buffered_file->readBlock(copy_block);
+			copy_data = BufferedFile::BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
+			BufferedFile::BufferedFrameWriter::memmove(new_disk_block, copy_data, 
+													   new_block_offset*element_size, 
+													   num_left_insert*element_size);
+		}
+		else
+		{
+			copy_disk_block = buffered_file->readBlock(copy_block+1);
+			copy_data = BufferedFile::BufferedFrameReader::readRawData(copy_disk_block, 0);
+			BufferedFile::BufferedFrameWriter::memmove(new_disk_block, copy_data, 
+													   (new_block_offset + (num_elements_per_block-copy_offset+1))*element_size,
+													   (num_left_insert - (new_block_offset + (num_elements_per_block-copy_offset+1)))*element_size);
+			
+			copy_disk_block = buffered_file->readBlock(copy_block);
+			copy_data = BufferedFile::BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
+			BufferedFile::BufferedFrameWriter::memmove(new_disk_block, copy_data,
+													   new_block_offset*element_size,
+													(num_element_insert-copy_offset+1)*element_size);
+		}
+		
+		copy_position = position;
+		while(first!=last)
+		{
+			copy_block = (copy_position/num_elements_per_block) + 1;
+			copy_offset = (copy_position%num_elements_per_block) * element_size;
+			copy_disk_block = buffered_file->readBlock(copy_block);
+			BufferedFile::BufferedFrameWriter::write<T>(copy_disk_block, copy_offset,(T)(*first));
+			copy_position ++;
+			first ++;
+		}
+		
+	}
+	else
+	{
+		const void* copy_data;
+		BufferedFile::BufferFrame* disk_block = buffered_file->readBlock(last_block);
+		copy_data = BufferedFile::BufferedFrameReader::readRawData(disk_block, 
+																   (position%num_elements_per_block)*element_size);
+		BufferedFile::BufferedFrameWriter::memmove(disk_block, copy_data, 
+												   ((position + num_element_insert)%num_elements_per_block)*element_size,
+												   ((sz%num_elements_per_block) - (position%num_elements_per_block))*element_size);
+		while(first!=last)
+		{
+				BufferedFile::BufferedFrameWriter::write<T>(disk_block, 
+															(position%num_elements_per_block)*element_size, 
+															(T)(*first));
+				position++;
+				first++;
+		}
+	}
+	sz += num_element_insert;
+}
 
 // template <typename T>
 // typename vector<T>::iterator vector<T>::begin() {

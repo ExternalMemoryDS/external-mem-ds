@@ -207,7 +207,7 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 		
 		if(alloted->is_valid && alloted->is_dirty)
 		{
-			pwrite(fd, alloted->data, block_size, getblockoffset(alloted->block_number));
+			writeBlock(alloted->block_number);
 		}
 		
 		alloted->next->prev = free_list_head;
@@ -247,6 +247,9 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 
 void BufferedFile::writeBlock(long block_number)
 {
+	if(block_number > last_block_alloted)
+		return;
+	
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
 	if(got!=block_hash.end() && got->second->is_valid)
 	{
@@ -256,6 +259,12 @@ void BufferedFile::writeBlock(long block_number)
 }
 
 void BufferedFile::deleteBlock(long block_number) {
+	if(block_number == 0)
+		return;
+	
+	last_block_alloted = block_number - 1;
+	
+	ftruncate(fd, (last_block_alloted+1)*block_size);	
 	return;
 }
 

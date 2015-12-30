@@ -32,7 +32,7 @@ int main()
 	std::vector<int> ins_vec;
 	for(auto i = 1; i<=1; i++)
 		ins_vec.push_back(dice());
-	exvec.insert(16, ins_vec.begin(), ins_vec.end());
+	exvec.insert(vector<int>::iterator(16,&exvec), ins_vec.begin(), ins_vec.end());
 	
 	for (auto it = 0; it < exvec.size(); it++)
 	{
@@ -40,6 +40,34 @@ int main()
 	}
 	
 	//exvec.clear();
+	
+	std::cout << std::endl;
+	std::cout << exvec.size() << std::endl;
+        
+	exvec.erase(vector<int>::iterator(2,&exvec), vector<int>::iterator(15,&exvec));
+	
+	std::cout << std::endl;
+	
+	for (auto it = exvec.begin(); it != exvec.end(); it++)
+	{
+		std::cout << *it << std::endl;		
+	}
+	
+	std::cout << std::endl;
+	
+	for (auto it = exvec.rbegin(); it != exvec.rend(); it++)
+	{
+		std::cout << *it << std::endl;
+		*it = 3;
+	}
+	
+	std::cout << std::endl;
+	
+	for (auto it = exvec.cbegin(); it != exvec.cend(); it++)
+	{
+		std::cout << *it << std::endl;
+// 		*it = 5;
+	}
 	
 	std::cout << std::endl;
 	std::cout << exvec.size() << std::endl;

@@ -67,22 +67,26 @@
 
 */
 
-
-
+struct blockOffsetPair{
+	long blockNumber;
+	long offset;
+};
 
 template <typename K, typename V>
-class BTreeNode {
-private:
+class BTreeNode{
+protected:
+	long M;
+	long block_number;
+	bool isRoot;
+	K keys[M];
+	int curr_keys; 	// Current number of keys in the node
+
 	virtual void splitInternal();
 
-	// Current number of keys in the node
-	int curr_keys;
-
-protected:
-	bool isRoot;
-
 public:
-	virtual V& findInNode(const K&);
+	BTreeNode(long block_number, long M): block_number(block_number), M(M){};
+	//virtual V& findInNode(const K&);
+	~BTreeNode();
 	virtual void addToNode(const K&);
 	virtual void deleteFromNode(const K&);
 };
@@ -90,9 +94,10 @@ public:
 template <typename K, typename V>
 class InternalNode : BTreeNode{
 private:
-	//array of blocknumbers
+	//array of block numbers
+	long child_block_numbers[M+1];
 public:
-	V& findInNode(const K&);
+	long findInNode(const K&);	//returns block number of appropriate child node
 	void addToNode(const K&);
 	void deleteFromNode(const K&);
 };
@@ -101,8 +106,9 @@ template <typename K, typename V>
 class TreeLeafNode : BTreeNode{
 private:
 	//array of block, offset pairs
+	blockOffsetPair value_node_address[M+1];
 public:
-	V& findInNode(const K&);
+	blockOffsetPair& findInNode(const K&);
 	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
  	void deleteFromNode(const K&);
 };
@@ -167,3 +173,4 @@ public:
 		return sz;
 	}
 };
+

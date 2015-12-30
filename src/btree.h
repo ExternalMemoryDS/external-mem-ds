@@ -16,7 +16,6 @@
 	The leaves will form a doubly linked list
 
 */
-<<<<<<< HEAD
 
 /*
 
@@ -68,18 +67,6 @@
 
 */
 
-
-
-
-template <typename K, typename V>
-class BTreeNode {
-private:
-	virtual void splitInternal();
-
-	// Current number of keys in the node
-	int curr_keys;
-
-=======
 struct blockOffsetPair{
 	long blockNumber;
 	long offset;
@@ -87,13 +74,15 @@ struct blockOffsetPair{
 
 template <typename K, typename V>
 class BTreeNode{
->>>>>>> 7edf810... Added attribute members to node classes. Fixed method return types
 protected:
 	long M;
-	long block_number;	
+	long block_number;
 	bool isRoot;
 	K keys[M];
+	int curr_keys; 	// Current number of keys in the node
+
 	virtual void splitInternal();
+
 public:
 	BTreeNode(long block_number, long M): block_number(block_number), M(M){};
 	//virtual V& findInNode(const K&);

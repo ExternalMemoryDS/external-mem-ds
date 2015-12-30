@@ -5,6 +5,14 @@
 #include <cstring>
 
 
+//Type Definitions
+typedef long blocknum_t;
+typedef long offset_t;
+typedef long long int size_type;
+
+//CONSTANTS
+const blocknum_t NULL_BLOCK = -1;
+const offset_t NULL_OFFSET = -1;
 /*
 	Actually a B+Tree but using BTree in class names for readability
 
@@ -70,16 +78,16 @@
 
 */
 
-struct blockOffsetPair {
-	long blockNumber;
-	long offset;
+struct blockOffsetPair{
+	blocknum_t block_number;
+	offset_t offset;
 };
 
 template <typename K, typename V>
 class BTreeNode {
 protected:
 	long M;
-	long block_number;
+	blocknum_t block_number;
 	bool isRoot;
 	std::vector<K> keys;
 	int curr_keys; 	// Current number of keys in the node
@@ -87,12 +95,14 @@ protected:
 	virtual void splitInternal();
 
 public:
-	BTreeNode(long block_number, long M): block_number(block_number), M(M){
+	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M){
 		curr_keys = 0;
 		keys.reserve(keys.size() + M);
 	};
+
 	//virtual V& findInNode(const K&);
 	~BTreeNode();
+	virtual bool isLeaf();
 	virtual void addToNode(const K&);
 	virtual void deleteFromNode(const K&);
 };
@@ -100,13 +110,14 @@ public:
 template <typename K, typename V>
 class InternalNode : BTreeNode<K, V> {
 private:
-	//array of block numbers
-	int M;
-	std::vector<long> child_block_numbers;
+	long M;
+	std::vector<blocknum_t> child_block_numbers;
+
 public:
-	long findInNode(const K&);	//returns block number of appropriate child node
+	blocknum_t findInNode(const K&);	//returns block number of appropriate child node
 	void addToNode(const K&);
 	void deleteFromNode(const K&);
+	bool isLeaf(){	return false;	}
 };
 
 template <typename K, typename V>
@@ -118,6 +129,8 @@ public:
 	blockOffsetPair& findInNode(const K&);
 	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
  	void deleteFromNode(const K&);
+
+ 	bool isLeaf(){	return true;	}
 };
 /**
 	Some of the fields available in header of BufferedFile
@@ -135,7 +148,7 @@ public:
 template <typename K, typename V>
 class BTree {
 public:
-	typedef long long int size_type;
+
 private:
 	const size_t Node_type_identifier_size = 1; // in bytes
 
@@ -149,6 +162,10 @@ private:
 	long M; // Maximum M keys in the internal nodes
 
 	int calculateM(const size_t blocksize, const size_t key_size);
+	BTreeNode * makeNode(blocknum_t);
+	/* makes an InternalNode : if first byte of block is 0
+	   makes a 	LeafNode     : if fisrt byte of block is 1
+	*/
 
 public:
 	BTree(const char* pathname, size_type _blocksize) : blocksize(_blocksize), sz(0) {
@@ -175,7 +192,7 @@ public:
 		delete buffered_file_data;
 	}
 
-	V& searchElem(const K& key);
+	blockOffsetPair* searchElem(const K& key);
 	void insertElem(const K& key, const V& value);
 	void deleteElem(const K& key);
 	void clearTree();
@@ -215,4 +232,21 @@ int BTree<K, V>::calculateM(const size_t blocksize, const size_t key_size) {
 		/ (int_size + long_size + key_size);
 
 	return M;
+};
+
+template <typename K>
+blockOffsetPair * BTree::searchElem(const K& search_key){
+	blockOffsetPair valueAddr;
+	BTreeNode * head = root;
+	blocknum_t next_block_num;
+
+	while(!head.isLeaf()){
+		next_block_num = head.findInNode();
+		if(next_block_num == NULL_BLOCK) return nullptr;
+
+		//make new node using
+		next_node = makeNode(next_block_num);
+		head = next_node;
+	}
+	return head.findInNode();
 };

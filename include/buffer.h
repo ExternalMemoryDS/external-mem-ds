@@ -32,11 +32,11 @@ private:
 	BufferFrame* header;
 	
 	std::unordered_map< long, BufferFrame* > block_hash;
-	
+
 	off_t getblockoffset(long blknbr) { return (off_t) (blknbr * block_size); }
-    
+
 public:
-	
+
 	// default numbers are arbitrary. change to best value.
 	// reserved_memory is the size of buffer pool in main memory to be reserved for the application.
 	BufferedFile(const char* filepath, size_t blksize = 4096, size_t reserved_memory = 1048576);
@@ -59,7 +59,7 @@ private:
 	long block_number;
 	void* data;
 	const BufferedFile* file_ref;
-	
+
 	BufferFrame *next, *prev;
 public:
 	BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }

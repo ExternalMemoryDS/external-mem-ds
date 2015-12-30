@@ -6,10 +6,10 @@
 	Actually a B+Tree but using BTree in class names for readability
 
 
-			Class BTreeNode (Abstract)
-			  /			  \
-			 /		 	   \
-		LeafNode  	InternalNode
+        Class BTreeNode (Abstract)
+              /           \
+             /             \
+		LeafNode      InternalNode
 
 	Class BTree HAS A BTreeNode root
 	BTreeLeaf contains pointers(block nos and offsets) to item records

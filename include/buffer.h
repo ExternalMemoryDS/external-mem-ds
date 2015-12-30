@@ -184,6 +184,70 @@ public:
 	void deleteBlock(long block_number);
 };
 
+class BufferedFile::BufferFrame {
+	friend class BufferedWriter;
+	friend class BufferedFile;
+	friend class BufferedReader;
+private:
+	bool is_valid;
+	bool is_dirty;
+	long block_number;
+	void* data;
+	const BufferedFile* file_ref;
+
+	BufferFrame *next, *prev;
+public:
+	BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
+	BufferFrame() : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
+	~BufferFrame() { free(data); }
+	void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
+};
+
+class BufferedFile::BufferedFrameWriter
+{
+public:
+	static void memcpy(BufferFrame* frame, const void* src, size_t offset, size_t size)
+	{
+		frame->is_dirty = true;
+		std::memcpy(((char*)frame->data + offset), src, size);
+	}
+	
+	static void memset(BufferFrame* frame, char ch, size_t offset, size_t size)
+	{
+		frame->is_dirty = true;
+		std::memset(((char*)frame->data + offset), ch, size);
+	}
+	
+	static void memmove(BufferFrame* frame, const void* src, size_t offset, size_t size)
+	{
+		frame->is_dirty = true;
+		std::memmove(((char*)frame->data + offset), src, size);
+	}
+	
+	template <typename T>
+	static T write(BufferFrame* frame, size_t offset, const T& a)
+	{
+		memcpy(frame, &a, offset, sizeof(a));
+	}
+};
+
+class BufferedFile::BufferedFrameReader
+{
+public:
+	template <typename T>
+	static T read(BufferFrame* frame, size_t offset)
+	{
+		return *((T*)((char*)frame->data + offset));
+	}
+	
+	template <typename T>
+	static T* readPtr(BufferFrame* frame, size_t offset)
+	{
+		frame->is_dirty = true;
+		return ((T*)((char*)frame->data + offset));
+	}
+};
+
 BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved_memory) :
 						block_size(blksize), buffer_pool_size(reserved_memory/blksize), last_block_alloted(0)
 {

@@ -2,42 +2,55 @@
 #include <stdexcept>
 #include <stddef.h>
 
-template <typename K>
-class rootNode {
-private:
-	long num_keys;	//number of keys actually present
-public:
+/*
+	Actually a B+Tree but using BTree in class names for readability	
 
-	//methods
-	V& search(const K&);
-	void insert(const K&, const V&);
-	void delete(const K&);
+
+			Class BTreeNode (Abstract)
+			  /			  \
+			 /		 	   \
+		LeafNode  	InternalNode
+
+	Class BTree HAS A BTreeNode root
+	BTreeLeaf contains pointers to item records
+	The Item records will form a doubly linked list
+
+*/
+
+
+template <typename K, typename V>
+class BTreeNode{
+private:
+	virtual void splitInternal();
+
+protected:
+	bool isRoot;
+
+public:
+	virtual V& findInNode(const K&);
+	virtual void addToNode(const K&);
+	virtual void deleteFromNode(const K&);
 };
 
-template <typename K>
-class leafNode {
+template <typename K, typename V>
+class InternalNode : BTreeNode{
 private:
-	long num_keys;	//number of keys actually present
+	//array of blocknumbers
 public:
-
-	//methods
-	V& search(const K&);
-	void insert(const K&, const V&);
-	void delete(const K&);
+	V& findInNode(const K&);
+	void addToNode(const K&);
+	void deleteFromNode(const K&);
 };
 
-template <typename K>
-class internalNode {
+template <typename K, typename V>
+class TreeLeafNode : BTreeNode{
 private:
-	int num_keys;	//number of keys actually present
+	//array of block, offset pairs
 public:
-
-	//methods
-	V& search(const K&);
-	void insert(const K&);
-	void delete(const K&);
+	V& findInNode(const K&);
+	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
+ 	void deleteFromNode(const K&);
 };
-
 /**
 	Some of the fields available in header of BufferedFile
 
@@ -60,7 +73,7 @@ private:
 	BufferedFile* buffered_file_internal;
 	BufferedFile* buffered_file_data;
 	bool isRootLeaf;
-	rootNode *root;
+	BTreeNode *root;
 	size_type sz;
 	long M; // Maximum M keys in the internal nodes
 

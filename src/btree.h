@@ -154,10 +154,10 @@ public:
 	BTree(const char* pathname, size_type _blocksize) : blocksize(_blocksize), sz(0) {
 
 		// this would have read the header from the file and set all the fields accordingly
-		buffered_file_internal = new BufferedFile(pathname, blocksize, blocksize*3);
+		buffered_file_internal = new BufferedFile(pathname, blocksize);
 
 		// get data file
-		buffered_file_data = new BufferedFile(strcat(pathname, "_data"), sizeof(V), sizeof(V)*3);
+		buffered_file_data = new BufferedFile(strcat(pathname, "_data"), sizeof(V);
 
 		// will write it to the appropriate position in the header
 		buffered_file_internal->header->setDataFileName(

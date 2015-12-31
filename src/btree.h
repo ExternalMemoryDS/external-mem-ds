@@ -104,10 +104,13 @@ public:
 	//virtual V& findInNode(const K&);
 	~BTreeNode();
 
-	// removed virtual for now
-	bool isLeaf();
-	void addToNode(const K&);
-	void deleteFromNode(const K&);
+	bool isSplitNeededForAdd() {
+		return (curr_keys == M - 1);
+	};
+	virtual bool isLeaf();
+	virtual void addToNode(const K&);
+	virtual void deleteFromNode(const K&);
+
 };
 
 template <typename K, typename V>
@@ -167,7 +170,7 @@ private:
 	BufferedFile* buffered_file_internal;
 	BufferedFile* buffered_file_data;
 
-	bool isRootLeaf;
+	//bool isRootLeaf;
 	BTreeNode<K, V>* root;
 	size_type sz;
 	size_type blocksize;
@@ -271,7 +274,7 @@ BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
 	BTreeNode<K, V>* new_node = nullptr;
 
 	// read 1st byte from buff
-	bool isLeaf = BufferedFrameReader::readPtr<bool>(buff, 0);
+	bool isLeaf = BufferedFrameReader::read<bool>(buff, 0);
 
 	if (isLeaf) {
 		new_node = new TreeLeafNode<K, V>(block_number, M);
@@ -282,11 +285,4 @@ BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
 	}
 
 	return new_node;
-};
-
-template <typename K, typename V>
-blocknum_t InternalNode<K, V>::findInNode(const K&) {
-
-
-
 };

@@ -1,7 +1,7 @@
 #include "buffer.h"
 #include <stdexcept>
 #include <stddef.h>
-#include <vector>
+#include <list>
 #include <cstring>
 
 
@@ -90,7 +90,7 @@ protected:
 	long M;
 	blocknum_t block_number;
 	bool isRoot;
-	std::vector<K> keys;
+	std::list<K> keys;
 	int curr_keys; 	// Current number of keys in the node
 
 	virtual void splitInternal();
@@ -112,7 +112,7 @@ public:
 template <typename K, typename V>
 class InternalNode : BTreeNode<K, V> {
 private:
-	std::vector<blocknum_t> child_block_numbers;
+	std::list<blocknum_t> child_block_numbers;
 
 public:
 	InternalNode(blocknum_t block_number, long M, bool _isRoot = false) {
@@ -129,7 +129,7 @@ template <typename K, typename V>
 class TreeLeafNode : BTreeNode<K, V> {
 private:
 	//array of block, offset pairs
-	std::vector<blockOffsetPair> value_node_address;
+	std::list<blockOffsetPair> value_node_address;
 public:
 	TreeLeafNode(blocknum_t block_number, long M, bool _isRoot = false) {
 		value_node_address.reserve(value_node_address.size() + (M + 1));
@@ -278,4 +278,11 @@ BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
 	}
 
 	return new_node;
+};
+
+template <typename K, typename V>
+blocknum_t InternalNode<K, V>::findInNode(const K&) {
+
+
+
 };

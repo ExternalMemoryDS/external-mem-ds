@@ -65,8 +65,8 @@ const offset_t NULL_OFFSET = -1;
 	M keys                          M * sizeof(K)
 	M + 1 pointers                  (M+1)*sizeof(long) block numbers
 
-                                Block (leaf node)
-                                -----------------
+                                    Block (leaf node)
+                                    -----------------
 	Node-type identifier            1 byte          0: Internal, 1: Leaf
 	Prev - block no                 sizeof(long)
 	Next - block no                 sizeof(long)
@@ -85,6 +85,7 @@ struct blockOffsetPair{
 
 template <typename K, typename V>
 class BTreeNode {
+
 protected:
 	long M;
 	blocknum_t block_number;
@@ -95,25 +96,29 @@ protected:
 	virtual void splitInternal();
 
 public:
-	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M){
+	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
 		curr_keys = 0;
 		keys.reserve(keys.size() + M);
 	};
 
-	//virtual V& findInNode(const K&);
 	~BTreeNode();
-	virtual bool isLeaf();
-	virtual void addToNode(const K&);
-	virtual void deleteFromNode(const K&);
+
+	// removed virtual for now
+	bool isLeaf();
+	void addToNode(const K&);
+	void deleteFromNode(const K&);
 };
 
 template <typename K, typename V>
 class InternalNode : BTreeNode<K, V> {
 private:
-	long M;
 	std::vector<blocknum_t> child_block_numbers;
 
 public:
+	InternalNode(blocknum_t block_number, long M, bool _isRoot = false) {
+		child_block_numbers.reserve(child_block_numbers.size() + (M + 1));
+	};
+
 	blocknum_t findInNode(const K&);	//returns block number of appropriate child node
 	void addToNode(const K&);
 	void deleteFromNode(const K&);
@@ -126,6 +131,10 @@ private:
 	//array of block, offset pairs
 	std::vector<blockOffsetPair> value_node_address;
 public:
+	TreeLeafNode(blocknum_t block_number, long M, bool _isRoot = false) {
+		value_node_address.reserve(value_node_address.size() + (M + 1));
+	};
+
 	blockOffsetPair& findInNode(const K&);
 	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
  	void deleteFromNode(const K&);
@@ -162,7 +171,7 @@ private:
 	long M; // Maximum M keys in the internal nodes
 
 	int calculateM(const size_t blocksize, const size_t key_size);
-	BTreeNode<K, V> * makeNode(blocknum_t);
+	BTreeNode<K, V> * getNodeFromBlockNum(blocknum_t);
 	/* makes an InternalNode : if first byte of block is 0
 	   makes a 	LeafNode     : if fisrt byte of block is 1
 	*/
@@ -235,18 +244,38 @@ int BTree<K, V>::calculateM(const size_t blocksize, const size_t key_size) {
 };
 
 template <typename K, typename V>
-blockOffsetPair* BTree<K, V>::searchElem(const K& search_key){
+blockOffsetPair* BTree<K, V>::searchElem(const K& search_key) {
 	blockOffsetPair valueAddr;
 	BTreeNode<K, V>* head = root;
 	blocknum_t next_block_num;
 
-	while(!head.isLeaf()){
-		next_block_num = head.findInNode();
+	while(! head.isLeaf()){
+		next_block_num = head->findInNode(search_key);
 		if(next_block_num == NULL_BLOCK) return nullptr;
 
-		//make new node using
-		BTreeNode<K, V>* next_node = makeNode(next_block_num);
+		BTreeNode<K, V>* next_node = getNodeFromBlockNum(next_block_num);
 		head = next_node;
 	}
-	return head.findInNode();
+	return head->findInNode(search_key);
+};
+
+
+template <typename K, typename V>
+BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
+
+	BufferFrame* buff = buffered_file_internal->readBlock(block_number);
+	BTreeNode<K, V>* new_node = nullptr;
+
+	// read 1st byte from buff
+	bool isLeaf = BufferedFrameReader::readPtr<bool>(buff, 0);
+
+	if (isLeaf) {
+		new_node = new TreeLeafNode<K, V>(block_number, M);
+		// read other properties from block and set them
+	} else {
+		new_node = new InternalNode<K, V>(block_number, M);
+		// read other properties from block and set them
+	}
+
+	return new_node;
 };

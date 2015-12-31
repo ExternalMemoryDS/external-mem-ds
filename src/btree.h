@@ -4,6 +4,7 @@
 #include <list>
 #include <cstring>
 
+using namespace	std;
 
 //Type Definitions
 typedef long blocknum_t;
@@ -118,7 +119,7 @@ private:
 	std::list<blocknum_t> child_block_numbers;
 
 public:
-	InternalNode(blocknum_t block_number, long M, bool _isRoot = false) {
+	InternalNode(blocknum_t block_number, long M, bool _isRoot = false): BTreeNode(block_number, M) {
 		child_block_numbers.reserve(child_block_numbers.size() + (M + 1));
 	};
 
@@ -282,3 +283,20 @@ BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
 
 	return new_node;
 };
+
+template <typename K, typename V>
+blocknum_t InternalNode<K,V>::findInNode(const K& find_key){
+	int i;
+	// while((i <= M) && (find_key <= child_block_numbers[i])){
+	// 	i = i+1;
+	// }
+	typename std::list<K>::const_iterator key_iter = (this->keys).begin();
+	typename std::list<blocknum_t>::const_iterator block_iter = this->child_block_numbers.begin();
+
+	while((key_iter != (this->keys).end()) && (find_key <= *key_iter)){
+		++key_iter;
+		++block_iter;
+	}
+	--block_iter;
+	return *block_iter;
+}

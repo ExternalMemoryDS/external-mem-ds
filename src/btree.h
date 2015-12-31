@@ -107,6 +107,10 @@ public:
 	bool isLeaf();
 	void addToNode(const K&);
 	void deleteFromNode(const K&);
+
+	bool isSplitNeededForAdd() {
+		return (curr_keys == M - 1);
+	};
 };
 
 template <typename K, typename V>
@@ -278,11 +282,4 @@ BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
 	}
 
 	return new_node;
-};
-
-template <typename K, typename V>
-blocknum_t InternalNode<K, V>::findInNode(const K&) {
-
-
-
 };

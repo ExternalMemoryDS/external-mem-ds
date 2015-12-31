@@ -20,7 +20,7 @@ const offset_t NULL_OFFSET = -1;
         Class BTreeNode (Abstract)
               /           \
              /             \
-		LeafNode      InternalNode
+        LeafNode      InternalNode
 
 	Class BTree HAS A BTreeNode root
 	BTreeLeaf contains pointers(block nos and offsets) to item records
@@ -117,7 +117,7 @@ public:
 	blocknum_t findInNode(const K&);	//returns block number of appropriate child node
 	void addToNode(const K&);
 	void deleteFromNode(const K&);
-	bool isLeaf(){	return false;	}
+	bool isLeaf(){ return false; }
 };
 
 template <typename K, typename V>
@@ -130,12 +130,12 @@ public:
 	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
  	void deleteFromNode(const K&);
 
- 	bool isLeaf(){	return true;	}
+    bool isLeaf(){ return true; }
 };
 /**
 	Some of the fields available in header of BufferedFile
 
- 	const size_type key_size;
+    const size_type key_size;
 	const size_type value_size;
 	const string Identifier = "BTREE";
 
@@ -162,7 +162,7 @@ private:
 	long M; // Maximum M keys in the internal nodes
 
 	int calculateM(const size_t blocksize, const size_t key_size);
-	BTreeNode * makeNode(blocknum_t);
+	BTreeNode<K, V> * makeNode(blocknum_t);
 	/* makes an InternalNode : if first byte of block is 0
 	   makes a 	LeafNode     : if fisrt byte of block is 1
 	*/
@@ -174,7 +174,7 @@ public:
 		buffered_file_internal = new BufferedFile(pathname, blocksize);
 
 		// get data file
-		buffered_file_data = new BufferedFile(strcat(pathname, "_data"), sizeof(V);
+		buffered_file_data = new BufferedFile(strcat(pathname, "_data"), sizeof(V));
 
 		// will write it to the appropriate position in the header
 		buffered_file_internal->header->setDataFileName(
@@ -234,10 +234,10 @@ int BTree<K, V>::calculateM(const size_t blocksize, const size_t key_size) {
 	return M;
 };
 
-template <typename K>
-blockOffsetPair * BTree::searchElem(const K& search_key){
+template <typename K, typename V>
+blockOffsetPair* BTree<K, V>::searchElem(const K& search_key){
 	blockOffsetPair valueAddr;
-	BTreeNode * head = root;
+	BTreeNode<K, V>* head = root;
 	blocknum_t next_block_num;
 
 	while(!head.isLeaf()){
@@ -245,7 +245,7 @@ blockOffsetPair * BTree::searchElem(const K& search_key){
 		if(next_block_num == NULL_BLOCK) return nullptr;
 
 		//make new node using
-		next_node = makeNode(next_block_num);
+		BTreeNode<K, V>* next_node = makeNode(next_block_num);
 		head = next_node;
 	}
 	return head.findInNode();

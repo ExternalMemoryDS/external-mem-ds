@@ -4,6 +4,7 @@
 #include <list>
 #include <cstring>
 
+using namespace	std;
 
 //Type Definitions
 typedef long blocknum_t;
@@ -91,14 +92,11 @@ protected:
 	blocknum_t block_number;
 	bool isRoot;
 	std::list<K> keys;
-	int curr_keys; 	// Current number of keys in the node
 
 	virtual void splitInternal();
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
-		curr_keys = 0;
-		keys.reserve(keys.size() + M);
 	};
 
 	//virtual V& findInNode(const K&);
@@ -107,11 +105,10 @@ public:
 	bool isSplitNeededForAdd() {
 		return (curr_keys == M - 1);
 	};
+
 	virtual bool isLeaf();
 	virtual void addToNode(const K&);
 	virtual void deleteFromNode(const K&);
-
-};
 
 template <typename K, typename V>
 class InternalNode : BTreeNode<K, V> {
@@ -121,7 +118,7 @@ private:
 
 public:
 	InternalNode(blocknum_t block_number, long M, bool _isRoot = false) {
-		child_block_numbers.reserve(child_block_numbers.size() + (M + 1));
+		BTreeNode<K, V>(block_number, M);
 	};
 
 	blocknum_t findInNode(const K&);	//returns block number of appropriate child node
@@ -137,10 +134,10 @@ private:
 	std::list<blockOffsetPair> value_node_address;
 public:
 	TreeLeafNode(blocknum_t block_number, long M, bool _isRoot = false) {
-		value_node_address.reserve(value_node_address.size() + (M + 1));
+		BTreeNode<K, V>(block_number, M);
 	};
 
-	blockOffsetPair& findInNode(const K&);
+	blockOffsetPair findInNode(const K&);
 	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
  	void deleteFromNode(const K&);
 
@@ -251,19 +248,36 @@ int BTree<K, V>::calculateM(const size_t blocksize, const size_t key_size) {
 };
 
 template <typename K, typename V>
-blockOffsetPair* BTree<K, V>::searchElem(const K& search_key) {
+V& BTree<K, V>::searchElem(const K& search_key) {
 	blockOffsetPair valueAddr;
-	BTreeNode<K, V>* head = root;
 	blocknum_t next_block_num;
 
+	// Node for traversing the tree
+	BTreeNode<K, V>* head = root;
+
 	while(! head.isLeaf()){
+
+		// always called on an internal node
 		next_block_num = head->findInNode(search_key);
 		if(next_block_num == NULL_BLOCK) return nullptr;
 
 		BTreeNode<K, V>* next_node = getNodeFromBlockNum(next_block_num);
 		head = next_node;
 	}
-	return head->findInNode(search_key);
+
+	// always called on a leaf node - returns a block-offset pair
+	valueAddr = head->findInNode(search_key);
+
+	// i.e. the key is not found
+	if (valueAddr.block_number == NULL_BLOCK
+		|| valueAddr.offset == NULL_OFFSET
+	) {
+		return nullptr;
+	}
+
+	// otherwise read the value from the block in data file and return
+	BufferFrame* buff = buffered_file_data->readBlock(valueAddr.block_number);
+	return BufferedFrameReader::readPtr<V>(buff, valueAddr.offset);
 };
 
 
@@ -285,4 +299,46 @@ BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
 	}
 
 	return new_node;
+};
+
+template <typename K, typename V>
+blocknum_t InternalNode<K,V>::findInNode(const K& find_key) {
+	typename std::list<K>::const_iterator key_iter;
+	typename std::list<blocknum_t>::const_iterator block_iter;
+
+	for (
+		key_iter = this->keys.begin(), block_iter = this->child_block_number.begin();
+		key_iter != (this->keys).end();
+		key_iter++, block_iter++
+	){
+		if (*key_iter > find_key) {
+			return *block_iter;
+		}
+	}
+	block_iter--;
+	return *block_iter;
+};
+
+template <typename K, typename V>
+blockOffsetPair TreeLeafNode<K,V>::findInNode(const K& find_key) {
+	typename std::list<K>::const_iterator key_iter;
+	typename std::list<blockOffsetPair>::const_iterator block_iter;
+	blockOffsetPair reqd_block;
+
+	for (
+		key_iter = this->keys.begin(), block_iter = this->value_node_address.begin();
+		key_iter != (this->keys).end();
+		key_iter++, block_iter++
+	){
+		if (*key_iter == find_key) {
+			reqd_block.block_number = (*block_iter).block_number;
+			reqd_block.offset = (*block_iter).offset;
+			return reqd_block;
+		}
+	}
+
+	reqd_block.block_number = NULL_BLOCK;
+	reqd_block.offset = NULL_OFFSET;
+
+	return reqd_block;
 };

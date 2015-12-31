@@ -4,11 +4,11 @@
 #include <iostream>
 #include <vector>
 
-#define NUM_INSERT 18
+#define NUM_INSERT 8050
 
 int main()
 {
-	vector<int> exvec("./randvec", (size_t) 16);
+	vector<int> exvec("./randvec", (size_t) 4096);
 	
 	std::default_random_engine generator;
 	std::uniform_int_distribution<int> distribution(1,1000);
@@ -30,7 +30,7 @@ int main()
 	
 	//exvec.insert(2, 5);
 	std::vector<int> ins_vec;
-	for(auto i = 1; i<=1; i++)
+	for(auto i = 1; i<=231; i++)
 		ins_vec.push_back(dice());
 	exvec.insert(vector<int>::iterator(16,&exvec), ins_vec.begin(), ins_vec.end());
 	
@@ -44,7 +44,7 @@ int main()
 	std::cout << std::endl;
 	std::cout << exvec.size() << std::endl;
         
-	exvec.erase(vector<int>::iterator(2,&exvec), vector<int>::iterator(15,&exvec));
+	exvec.erase(vector<int>::iterator(2,&exvec), vector<int>::iterator(8250,&exvec));
 	
 	std::cout << std::endl;
 	

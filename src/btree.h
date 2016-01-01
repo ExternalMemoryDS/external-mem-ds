@@ -327,7 +327,7 @@ blockOffsetPair TreeLeafNode<K,V>::findInNode(const K& find_key) {
 		key_iter != (this->keys).end();
 		key_iter++, block_iter++
 	){
-		if (*key_iter > find_key) {
+		if (*key_iter == find_key) {
 			reqd_block.block_number = (*block_iter).block_number;
 			reqd_block.offset = (*block_iter).offset;
 			return reqd_block;

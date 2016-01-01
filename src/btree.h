@@ -93,7 +93,7 @@ protected:
 	bool isRoot;
 	std::list<K> keys;
 
-	virtual void splitInternal();
+	virtual BTreeNode<K, V>* splitChild(const K&);
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
@@ -109,6 +109,19 @@ public:
 	virtual void addToNode(const K&);
 	virtual void deleteFromNode(const K&);
 
+	// this method checks if the child where the key K goes
+	// after insert requires a split or not
+	bool isSplitNeededForAdd(const K&);
+
+	// Will use the BufferedFrameReader's static method to read the disk_block and
+	// set approriate values
+	void setNodePropFromFrame(BufferFrame*);
+
+	// Will use the BufferedFrameWriter's static method to change the disk_block
+	void writeNodePropToFrame(BufferFrame*);
+
+};
+
 template <typename K, typename V>
 class InternalNode : BTreeNode<K, V> {
 private:
@@ -117,10 +130,12 @@ private:
 public:
 	InternalNode(blocknum_t block_number, long M, bool _isRoot = false) {
 		BTreeNode<K, V>(block_number, M);
+		this->isRoot = _isRoot;
 	};
 
 	blocknum_t findInNode(const K&);	//returns block number of appropriate child node
 	void addToNode(const K&);
+	void addToNode(const K&, blocknum_t);
 	void deleteFromNode(const K&);
 	bool isLeaf(){ return false; }
 };
@@ -133,14 +148,17 @@ private:
 public:
 	TreeLeafNode(blocknum_t block_number, long M, bool _isRoot = false) {
 		BTreeNode<K, V>(block_number, M);
+		this->isRoot = _isRoot;
 	};
 
 	blockOffsetPair findInNode(const K&);
 	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
+	void addToNode(const K&, blockOffsetPair);
  	void deleteFromNode(const K&);
 
     bool isLeaf(){ return true; }
 };
+
 /**
 	Some of the fields available in header of BufferedFile
 
@@ -150,9 +168,7 @@ public:
 
 	These can be accessed as :
 	$buffered_file_object->header->key_size;
-
- */
-
+*/
 
 template <typename K, typename V>
 class BTree {
@@ -171,6 +187,7 @@ private:
 	long M; // Maximum M keys in the internal nodes
 
 	int calculateM(const size_t blocksize, const size_t key_size);
+
 	BTreeNode<K, V> * getNodeFromBlockNum(blocknum_t);
 	/* makes an InternalNode : if first byte of block is 0
 	   makes a 	LeafNode     : if fisrt byte of block is 1
@@ -178,8 +195,6 @@ private:
 
 public:
 	BTree(const char* pathname, size_type _blocksize) : blocksize(_blocksize), sz(0) {
-
-		// this would have read the header from the file and set all the fields accordingly
 		buffered_file_internal = new BufferedFile(pathname, blocksize);
 
 		// get data file
@@ -192,6 +207,14 @@ public:
 
 		root = nullptr;
 		M = calculateM(blocksize, sizeof(K));
+
+		// this would have read the header from the file and set all the fields accordingly
+		// in the header (might have to make header a friend class of BTree)
+		// Two possibilities:
+		// 1. if the file was made previously, the header is read and values set in mem
+		// 2. if file was not previously used, header class reads required values from BTree class (friend)
+		// and then writes it to the header block on the file
+		buffered_file_internal->header->init();
 
 		// now ready for operation
 	}
@@ -311,7 +334,7 @@ blocknum_t InternalNode<K,V>::findInNode(const K& find_key) {
 			return *block_iter;
 		}
 	}
-	block_iter--;
+
 	return *block_iter;
 };
 
@@ -337,4 +360,111 @@ blockOffsetPair TreeLeafNode<K,V>::findInNode(const K& find_key) {
 	reqd_block.offset = NULL_OFFSET;
 
 	return reqd_block;
+};
+
+
+template <typename K, typename V>
+void BTree<K, V>::insertElem(const K& new_key, const V& new_value) {
+	BufferFrame* disk_block;
+
+	if (this->root == nullptr) {
+		// i.e. 'first' insert in the tree
+		long root_block_num = buffered_file_internal->header->root_block_num;
+		disk_block = buffered_file_internal->readBlock(root_block_num);
+		this->root = new TreeLeafNode<K, V>(root_block_num, this->M, true);
+		this->root->addToNode(new_key, new_value);
+
+		this->root->writeNodePropToFrame(disk_block);
+	} else {
+
+		blockOffsetPair valueAddr;
+		blocknum_t next_block_num;
+
+		// Node for traversing the tree
+		BTreeNode<K, V>* trav = this->root;
+
+		// split the root if needed and make a new root
+		if (this->root->isSplitNeededForAdd(new_key)) {
+			long new_root_bnum = buffered_file_internal->allotBlock();
+			BTreeNode<K, V>* t = new TreeLeafNode(new_root_bnum, this->M, true);
+			trav = t->splitChild(K, true);
+			this->root = t;
+		}
+
+		BTreeNode<K, V>* next_node;
+
+		while(trav && ! trav->isLeaf()) {
+
+			// pro-active splitting
+			if (trav->isSplitNeededForAdd(new_key)) {
+				// returns the proper next node
+				trav = trav->splitChild(K, true);
+			} else {
+				next_block_num = trav->findInNode(new_key);
+				new_node = getNodeFromBlockNum(next_block_num);
+				delete trav;
+				trav = next_node;
+			}
+		}
+
+		// always called on a leaf node - returns a block-offset pair
+		valueAddr = trav->findInNode(new_key);
+
+		// i.e. the key is not found
+		if (valueAddr.block_number == NULL_BLOCK
+			|| valueAddr.offset == NULL_OFFSET
+		) {
+			// key not present, so add the key and the value
+			trav->addToNode(new_key, new_value);
+		} else {
+			// key already exists, just update the value
+			trav->updateValue(new_key, new_value);
+		}
+	}
+};
+
+template <typename K, typename V>
+BTreeNode<K, V>* splitChild(const K& new_key) {
+	typename std::list<K>::const_iterator key_iter;
+	typename std::list<blocknum_t>::const_iterator block_iter;
+	typename std::list<blockOffsetPair>::const_iterator blockOffset_iter;
+
+	BTreeNode<K, V>* new_node;
+	BufferFrame* disk_block;
+	long new_block_num;
+
+	new_block_num = buffered_file_internal->allotBlock();
+	disk_block_new = buffered_file_internal->readBlock(new_block_num);
+	disk_block_old = buffered_file_internal->readBlock(this->block_number);
+
+	if (this->isLeaf()) {
+		new_node = new TreeLeafNode<K, V>(new_block_num, this->M, this->isRoot);
+
+		this->addToNode(new_key);
+		for(
+			int i = 0, key_iter = this->keys.begin(), block_iter = this->value_node_address.begin();
+			i <= (this->keys).size() / 2, key_iter != (this->keys).end();
+			key_iter++, block_iter++
+		) {
+			new_node->addToNode(*key_iter, *block_iter);
+			this->deleteFromNode(*key_iter, *block_iter);
+			this->writeNodePropToFrame(disk_block_old);
+			new_node->writeNodePropToFrame(disk_block_new);
+		}
+	} else {
+		new_node = new InternalNode<K, V>(new_block_num, this->M, this->isRoot);
+
+		for(
+			int i = 0, key_iter = this->keys.begin(), block_iter = this->child_block_numbers.begin();
+			i <= (this->keys).size() / 2, key_iter != (this->keys).end();
+			key_iter++, block_iter++
+		) {
+			new_node->addToNode(*key_iter, *block_iter);
+			this->deleteFromNode(*key_iter, *block_iter);
+			this->writeNodePropToFrame(disk_block_old);
+			new_node->writeNodePropToFrame(disk_block_new);
+		}
+	}
+
+	return new_node;
 };

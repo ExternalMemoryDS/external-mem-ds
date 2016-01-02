@@ -165,8 +165,10 @@ BufferedFile::~BufferedFile()
 			pwrite(fd, frame_pool[i].data, block_size, getblockoffset(frame_pool[i].block_number));
 		}
 	}
-    
-    fsync(fd);
+
+	ftruncate(fd, (last_block_alloted+1)*block_size);
+
+	fsync(fd);
     
 	flock(fd, LOCK_UN | LOCK_NB);
 	close(fd);
@@ -264,7 +266,6 @@ void BufferedFile::deleteBlock(long block_number) {
 	
 	last_block_alloted = block_number - 1;
 	
-	ftruncate(fd, (last_block_alloted+1)*block_size);	
 	return;
 }
 

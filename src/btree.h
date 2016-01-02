@@ -518,13 +518,14 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 			}
 		}
 
-		// TODO: adjust pointers and keys in "this" node - What adjustment are you talking about here ?
+		// TODO: adjust pointers and keys in  "this" node - What adjustment are you talking about here ?
+		//Done at end of method L: 564 - 580
 	} else {
 		//Removed this->isRoot as root is never child of anyone
 		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M);
 
-		typename std::list<K>::const_iterator key_iter;
-		typename std::list<blocknum_t>::const_iterator block_iter;
+		typename std::list<K>::const_iterator old_key_iter;
+		typename std::list<blocknum_t>::const_iterator old_block_iter;
 
 		//distribute keys
 		for (
@@ -557,8 +558,26 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 		//TODO: remove last remaining block number from old node - Explain this to me over chat
 
 		//TODO: adjust pointers and keys in "this" node - What adjustment are you talking about here ?
+		//DOne at end of method L: 564 - 580
 	}
 
+
+	typename std::list<K>::const_iterator curr_key_iter = current_node->keys.begin();
+	typename std::list<blocknum_t>::const_iterator curr_block_iter = current_node->child_block_numbers.begin();
 	// adjust keys and pointers in node
+
+
+	while(*curr_block_iter != child_to_split->block_number){
+		curr_block_iter++;
+		curr_key_iter++;
+	}
+
+	curr_block_iter++;
+	curr_key_iter++;
+
+	current_node->keys.insert(curr_key_iter, median_key);
+	current_node->child_block_numbers.insert(curr_key_iter, new_node->block_number)
+
+
 	return new_node;
 };

@@ -84,7 +84,7 @@ struct blockOffsetPair{
 	offset_t offset;
 };
 
-template <typename K, typename V>
+template <typename K, typename V, typename CompareFn>
 class BTreeNode {
 
 protected:
@@ -92,8 +92,9 @@ protected:
 	blocknum_t block_number;
 	bool isRoot;
 	std::list<K> keys;
+	CompareFn cmpl;
 
-	virtual BTreeNode<K, V>* splitChild(const K&);
+	virtual BTreeNode<K, V, CompareFn>* splitChild(const K&);
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
@@ -104,6 +105,17 @@ public:
 	virtual bool isLeaf();
 	virtual void addToNode(const K&);
 	virtual void deleteFromNode(const K&);
+
+	// methods for comparing keys
+	bool eq(const K& k1, const K& k2) {
+		return !(cmpl(k1, k2) && cmpl(k2, k1));
+	}
+
+	bool neq(const K& k1, const K& k2) {
+		return !(eq(k1, k2));
+	}
+
+
 
 	// this method checks if the child where the key K goes
 	// after insert requires a split or not
@@ -118,14 +130,14 @@ public:
 
 };
 
-template <typename K, typename V>
-class InternalNode : BTreeNode<K, V> {
+template <typename K, typename V, typename CompareFn>
+class InternalNode : BTreeNode<K, V, CompareFn> {
 private:
 	std::list<blocknum_t> child_block_numbers;
 
 public:
 	InternalNode(blocknum_t block_number, long M, bool _isRoot = false) {
-		BTreeNode<K, V>(block_number, M);
+		BTreeNode<K, V, CompareFn>(block_number, M);
 		this->isRoot = _isRoot;
 	};
 
@@ -136,19 +148,19 @@ public:
 	bool isLeaf(){ return false; }
 };
 
-template <typename K, typename V>
-class TreeLeafNode : BTreeNode<K, V> {
+template <typename K, typename V, typename CompareFn>
+class TreeLeafNode : BTreeNode<K, V, CompareFn> {
 private:
 	//array of block, offset pairs
 	std::list<blockOffsetPair> value_node_address;
 public:
 	TreeLeafNode(blocknum_t block_number, long M, bool _isRoot = false) {
-		BTreeNode<K, V>(block_number, M);
+		BTreeNode<K, V, CompareFn>(block_number, M);
 		this->isRoot = _isRoot;
 	};
 
 	blockOffsetPair findInNode(const K&);
-	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K,V>
+	void addToNode(const K&, const V&); //TODO: two arguments or one argument as item <K, V, CompareFn>
 	void addToNode(const K&, blockOffsetPair);
  	void deleteFromNode(const K&);
 
@@ -166,9 +178,8 @@ public:
 	$buffered_file_object->header->key_size;
 */
 
-template <typename K, typename V>
+template <typename K, typename V, typename CompareFn>
 class BTree {
-public:
 
 private:
 	const size_t Node_type_identifier_size = 1; // in bytes
@@ -177,14 +188,16 @@ private:
 	BufferedFile* buffered_file_data;
 
 	//bool isRootLeaf;
-	BTreeNode<K, V>* root;
+	BTreeNode<K, V, CompareFn>* root;
 	size_type sz;
 	size_type blocksize;
 	long M; // Maximum M keys in the internal nodes
 
+	CompareFn cmpl;
+
 	int calculateM(const size_t blocksize, const size_t key_size);
 
-	BTreeNode<K, V> * getNodeFromBlockNum(blocknum_t);
+	BTreeNode<K, V, CompareFn> * getNodeFromBlockNum(blocknum_t);
 	/* makes an InternalNode : if first byte of block is 0
 	   makes a 	LeafNode     : if fisrt byte of block is 1
 	*/
@@ -230,8 +243,8 @@ public:
 	}
 };
 
-template <typename K, typename V>
-int BTree<K, V>::calculateM(const size_t blocksize, const size_t key_size) {
+template <typename K, typename V, typename CompareFn>
+int BTree<K, V, CompareFn>::calculateM(const size_t blocksize, const size_t key_size) {
 
 	/*
 		sizeof(Node-type identifier) = 1 byte (A)
@@ -262,13 +275,13 @@ int BTree<K, V>::calculateM(const size_t blocksize, const size_t key_size) {
 	return M;
 };
 
-template <typename K, typename V>
-V& BTree<K, V>::searchElem(const K& search_key) {
+template <typename K, typename V, typename CompareFn>
+V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	blockOffsetPair valueAddr;
 	blocknum_t next_block_num;
 
 	// Node for traversing the tree
-	BTreeNode<K, V>* head = root;
+	BTreeNode<K, V, CompareFn>* head = root;
 
 	while(! head.isLeaf()){
 
@@ -276,7 +289,7 @@ V& BTree<K, V>::searchElem(const K& search_key) {
 		next_block_num = head->findInNode(search_key);
 		if(next_block_num == NULL_BLOCK) return nullptr;
 
-		BTreeNode<K, V>* next_node = getNodeFromBlockNum(next_block_num);
+		BTreeNode<K, V, CompareFn>* next_node = getNodeFromBlockNum(next_block_num);
 		head = next_node;
 	}
 
@@ -296,28 +309,28 @@ V& BTree<K, V>::searchElem(const K& search_key) {
 };
 
 
-template <typename K, typename V>
-BTreeNode<K, V>* BTree<K, V>::getNodeFromBlockNum(blocknum_t block_number) {
+template <typename K, typename V, typename CompareFn>
+BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::getNodeFromBlockNum(blocknum_t block_number) {
 
 	BufferFrame* buff = buffered_file_internal->readBlock(block_number);
-	BTreeNode<K, V>* new_node = nullptr;
+	BTreeNode<K, V, CompareFn>* new_node = nullptr;
 
 	// read 1st byte from buff
 	bool isLeaf = BufferedFrameReader::read<bool>(buff, 0);
 
 	if (isLeaf) {
-		new_node = new TreeLeafNode<K, V>(block_number, M);
+		new_node = new TreeLeafNode<K, V, CompareFn>(block_number, M);
 		// read other properties from block and set them
 	} else {
-		new_node = new InternalNode<K, V>(block_number, M);
+		new_node = new InternalNode<K, V, CompareFn>(block_number, M);
 		// read other properties from block and set them
 	}
 
 	return new_node;
 };
 
-template <typename K, typename V>
-blocknum_t InternalNode<K,V>::findInNode(const K& find_key) {
+template <typename K, typename V, typename CompareFn>
+blocknum_t InternalNode<K, V, CompareFn>::findInNode(const K& find_key) {
 	typename std::list<K>::const_iterator key_iter;
 	typename std::list<blocknum_t>::const_iterator block_iter;
 
@@ -326,7 +339,7 @@ blocknum_t InternalNode<K,V>::findInNode(const K& find_key) {
 		key_iter != (this->keys).end();
 		key_iter++, block_iter++
 	){
-		if (*key_iter > find_key) {
+		if (cmpl(*key_iter, find_key)) {
 			return *block_iter;
 		}
 	}
@@ -334,8 +347,8 @@ blocknum_t InternalNode<K,V>::findInNode(const K& find_key) {
 	return *block_iter;
 };
 
-template <typename K, typename V>
-blockOffsetPair TreeLeafNode<K,V>::findInNode(const K& find_key) {
+template <typename K, typename V, typename CompareFn>
+blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 	typename std::list<K>::const_iterator key_iter;
 	typename std::list<blockOffsetPair>::const_iterator block_iter;
 	blockOffsetPair reqd_block;
@@ -345,7 +358,7 @@ blockOffsetPair TreeLeafNode<K,V>::findInNode(const K& find_key) {
 		key_iter != (this->keys).end();
 		key_iter++, block_iter++
 	){
-		if (*key_iter == find_key) {
+		if (eq(*key_iter, find_key)) {
 			reqd_block.block_number = (*block_iter).block_number;
 			reqd_block.offset = (*block_iter).offset;
 			return reqd_block;
@@ -359,15 +372,15 @@ blockOffsetPair TreeLeafNode<K,V>::findInNode(const K& find_key) {
 };
 
 
-template <typename K, typename V>
-void BTree<K, V>::insertElem(const K& new_key, const V& new_value) {
+template <typename K, typename V, typename CompareFn>
+void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	BufferFrame* disk_block;
 
 	if (this->root == nullptr) {
 		// i.e. 'first' insert in the tree
 		long root_block_num = buffered_file_internal->header->root_block_num;
 		disk_block = buffered_file_internal->readBlock(root_block_num);
-		this->root = new TreeLeafNode<K, V>(root_block_num, this->M, true);
+		this->root = new TreeLeafNode<K, V, CompareFn>(root_block_num, this->M, true);
 		this->root->addToNode(new_key, new_value);
 
 		this->root->writeNodePropToFrame(disk_block);
@@ -377,27 +390,27 @@ void BTree<K, V>::insertElem(const K& new_key, const V& new_value) {
 		blocknum_t next_block_num;
 
 		// Node for traversing the tree
-		BTreeNode<K, V>* trav = this->root;
+		BTreeNode<K, V, CompareFn>* trav = this->root;
 
 		// split the root if needed and make a new root
 		if (this->root->isSplitNeededForAdd(new_key)) {
 			long new_root_bnum = buffered_file_internal->allotBlock();
-			BTreeNode<K, V>* t = new TreeLeafNode(new_root_bnum, this->M, true);
-			trav = t->splitChild(K, true);
+			BTreeNode<K, V, CompareFn>* t = new TreeLeafNode<K, V, CompareFn>(new_root_bnum, this->M, true);
+			trav = t->splitChild(new_key, true);
 			this->root = t;
 		}
 
-		BTreeNode<K, V>* next_node;
+		BTreeNode<K, V, CompareFn>* next_node;
 
 		while(trav && ! trav->isLeaf()) {
 
 			// pro-active splitting
 			if (trav->isSplitNeededForAdd(new_key)) {
 				// returns the proper next node
-				trav = trav->splitChild(K, true);
+				trav = trav->splitChild(new_key, true);
 			} else {
 				next_block_num = trav->findInNode(new_key);
-				new_node = getNodeFromBlockNum(next_block_num);
+				next_node = getNodeFromBlockNum(next_block_num);
 				delete trav;
 				trav = next_node;
 			}
@@ -419,44 +432,51 @@ void BTree<K, V>::insertElem(const K& new_key, const V& new_value) {
 	}
 };
 
-template <typename K, typename V>
-BTreeNode<K, V>* splitChild(const K& new_key) {
+template <typename K, typename V, typename CompareFn>
+BTreeNode<K, V, CompareFn>* BTreeNode<K, V, CompareFn>::splitChild(const K& new_key) {
 	typename std::list<K>::const_iterator key_iter;
 	typename std::list<blocknum_t>::const_iterator block_iter;
 	typename std::list<blockOffsetPair>::const_iterator blockOffset_iter;
 
-	BTreeNode<K, V>* new_node;
+	BTreeNode<K, V, CompareFn>* new_node;
 	BufferFrame* disk_block;
-	long new_block_num;
+	blocknum_t new_block_num;
+	K temp_key;
+	blocknum_t temp_block;
+	blockOffsetPair temp_block_offset;
 
 	new_block_num = buffered_file_internal->allotBlock();
 	disk_block_new = buffered_file_internal->readBlock(new_block_num);
 	disk_block_old = buffered_file_internal->readBlock(this->block_number);
 
 	if (this->isLeaf()) {
-		new_node = new TreeLeafNode<K, V>(new_block_num, this->M, this->isRoot);
+		new_node = new TreeLeafNode<K, V, CompareFn>(new_block_num, this->M, this->isRoot);
 
 		this->addToNode(new_key);
 		for(
-			int i = 0, key_iter = this->keys.begin(), block_iter = this->value_node_address.begin();
+			int i = 0, key_iter = this->keys.begin(), blockOffset_iter = this->value_node_address.begin();
 			i <= (this->keys).size() / 2, key_iter != (this->keys).end();
-			key_iter++, block_iter++
+			key_iter++, blockOffset_iter++
 		) {
-			new_node->addToNode(*key_iter, *block_iter);
-			this->deleteFromNode(*key_iter, *block_iter);
+			temp_key = *key_iter; 
+			temp_block_offset.block_number = *blockOffset_iter.block_number;
+			temp_block_offset.offset = *blockOffset_iter.offset;
+			new_node->addToNode(temp_key, temp_block);
+			this->deleteFromNode(temp_key);
 			this->writeNodePropToFrame(disk_block_old);
 			new_node->writeNodePropToFrame(disk_block_new);
 		}
 	} else {
-		new_node = new InternalNode<K, V>(new_block_num, this->M, this->isRoot);
+		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M, this->isRoot);
 
 		for(
 			int i = 0, key_iter = this->keys.begin(), block_iter = this->child_block_numbers.begin();
 			i <= (this->keys).size() / 2, key_iter != (this->keys).end();
 			key_iter++, block_iter++
 		) {
-			new_node->addToNode(*key_iter, *block_iter);
-			this->deleteFromNode(*key_iter, *block_iter);
+			temp_key = *key_iter; temp_block = *block_iter;
+			new_node->addToNode(temp_key, temp_block);
+			this->deleteFromNode(temp_key);
 			this->writeNodePropToFrame(disk_block_old);
 			new_node->writeNodePropToFrame(disk_block_new);
 		}

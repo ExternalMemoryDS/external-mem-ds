@@ -128,11 +128,16 @@ public:
 
 	// Will use the BufferedFrameReader's static method to read the disk_block and
 	// set approriate values
-	void setNodePropFromFrame(BufferFrame*);
+	void readNodeFromDisk(BufferFrame*);
 
 	// Will use the BufferedFrameWriter's static method to change the disk_block
-	void writeNodePropToFrame(BufferFrame*);
+	void writeNodetoDisk(BufferFrame*);
+	
+	// Returns true if no. of keys present == M
+	bool isFull(){ return (keys.size() == M) }
 
+	// Finds Median of existing Key and new_key
+	K& findMedian();
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -381,15 +386,16 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 template <typename K, typename V, typename CompareFn>
 void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	BufferFrame* disk_block;
+	BTreeNode<K, V> * next_node;
 
 	if (this->root == nullptr) {
 		// i.e. 'first' insert in the tree
-		long root_block_num = buffered_file_internal->header->root_block_num;
+		blocknum_t root_block_num = buffered_file_internal->header->root_block_num;
 		disk_block = buffered_file_internal->readBlock(root_block_num);
 		this->root = new TreeLeafNode<K, V, CompareFn>(root_block_num, this->M, true);
 		this->root->addToNode(new_key, new_value);
 
-		this->root->writeNodePropToFrame(disk_block);
+		this->root->writeNodetoDisk(disk_block);
 	} else {
 
 		blockOffsetPair valueAddr;
@@ -399,26 +405,30 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 		BTreeNode<K, V, CompareFn>* trav = this->root;
 
 		// split the root if needed and make a new root
-		if (this->root->isSplitNeededForAdd(new_key)) {
-			long new_root_bnum = buffered_file_internal->allotBlock();
-			BTreeNode<K, V, CompareFn>* t = new TreeLeafNode<K, V, CompareFn>(new_root_bnum, this->M, true);
-			trav = t->splitChild(new_key, true);
+
+		if (this->root->isFull()) {
+			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
+			BTreeNode<K, V>* t = new TreeLeafNode(new_root_bnum, this->M, true);
+			//trav = t->splitChild();
 			this->root = t;
+			//TODO: Need to make changes. Need to think
 		}
 
 		BTreeNode<K, V, CompareFn>* next_node;
 
 		while(trav && ! trav->isLeaf()) {
 
+			next_block_num = trav->findInNode(K);
+			next_node = getNodeFromBlockNum(next_block_num);
+
 			// pro-active splitting
-			if (trav->isSplitNeededForAdd(new_key)) {
+			if (next_node->isFull()) {
 				// returns the proper next node
-				trav = trav->splitChild(new_key, true);
 			} else {
 				next_block_num = trav->findInNode(new_key);
 				next_node = getNodeFromBlockNum(next_block_num);
 				delete trav;
-				trav = next_node;
+				trav = trav->splitChild(*next_node, new_key);
 			}
 		}
 
@@ -438,6 +448,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	}
 };
 
+<<<<<<< HEAD
 template <typename K, typename V, typename CompareFn>
 BTreeNode<K, V, CompareFn>* BTreeNode<K, V, CompareFn>::splitChild(const K& new_key) {
 	typename std::list<K>::const_iterator key_iter;
@@ -471,8 +482,98 @@ BTreeNode<K, V, CompareFn>* BTreeNode<K, V, CompareFn>::splitChild(const K& new_
 			this->deleteFromNode(temp_key);
 			this->writeNodePropToFrame(disk_block_old);
 			new_node->writeNodePropToFrame(disk_block_new);
+=======
+template <typename K, typename V>
+K& BTreeNode<K, V>::findMedian(){
+	//TODO: write median definition
+}
+
+template <typename K, typename V>
+BTreeNode<K, V>* splitChild(const BTreeNode<K,V>& child_to_split) {
+
+	//In this method this refers to the node that initiated the split on its child child_to_split
+
+	new_block_num = buffered_file_internal->allotBlock();
+	disk_block_new = buffered_file_internal->readBlock(new_block_num);
+	K median_key = findMedian();
+
+	
+
+
+	//disk_block_old = buffered_file_internal->readBlock(this->block_number);
+
+	// if (this->isLeaf()) {
+	// 	new_node = new TreeLeafNode<K, V>(new_block_num, this->M, this->isRoot);
+
+	// 	this->addToNode(new_key);
+	// 	for(
+	// 		int i = 0, key_iter = this->keys.begin(), block_iter = this->value_node_address.begin();
+	// 		i <= (this->keys).size() / 2, key_iter != (this->keys).end();
+	// 		key_iter++, block_iter++
+	// 	) {
+	// 		new_node->addToNode(*key_iter, *block_iter);
+	// 		this->deleteFromNode(*key_iter, *block_iter);
+	// 		this->writeNodetoDisk(disk_block_old);
+	// 		new_node->writeNodetoDisk(disk_block_new);
+	// 	}
+	// } else {
+	// 	new_node = new InternalNode<K, V>(new_block_num, this->M, this->isRoot);
+
+	// 	for(
+	// 		int i = 0, key_iter = this->keys.begin(), block_iter = this->child_block_numbers.begin();
+	// 		i <= (this->keys).size() / 2, key_iter != (this->keys).end();
+	// 		key_iter++, block_iter++
+	// 	) {
+	// 		new_node->addToNode(*key_iter, *block_iter);
+	// 		this->deleteFromNode(*key_iter, *block_iter);
+	// 		this->writeNodetoDisk(disk_block_old);
+	// 		new_node->writeNodetoDisk(disk_block_new);
+	// 	}
+	// }
+
+
+
+	if(child_to_split.isLeaf()){
+		//Removed this->isRoot as root is never child of anyone
+		new_node = new TreeLeafNode<K, V>(new_block_num, this->M);
+
+		//typename std::list<K>::const_iterator new_key_iter;
+		//typename std::list<blocknum_t>::const_iterator new_block_iter;
+
+		typename std::list<K>::const_iterator key_iter;
+		typename std::list<blockOffsetPair>::const_iterator block_iter;
+
+		//distribute keys
+		for (
+			old_key_iter = child_to_split->keys.begin(), old_block_iter = child_to_split->value_node_address.begin();
+			old_key_iter != (child_block_number->keys).end();
+			old_key_iter++, old_block_iter++
+			){
+			if(*old_key_iter == median_key){
+				//CRITICAL: MEDIAN KEY MUST BE ADDED TO NEW NODE IN CASE OF LEAF NODES
+				new_node->keys.push_back(*old_key_iter);
+				new_node->value_node_address.push_back(*old_block_iter);
+				//remove median from old node
+				//need to think about remove as it affects the iterator
+				//which can cause problems
+
+			} else if(*old_key_iter > median_key){
+				new_node->keys.push_back(*old_key_iter);
+				new_node->value_node_address.push_back(*old_block_iter);
+				//remove the key and block from oldnode
+				//need to think about remove as it affects the iterator
+				//which can cause problems
+			}
+
+>>>>>>> 124b4cf... Fixed datatypes. Changed insertElem method. added redistribution code to splitChild
 		}
+
+
+		//TODO: adjust pointers and keys in "this" node
+		this->addToNode(median_key);
+
 	} else {
+<<<<<<< HEAD
 		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M, this->isRoot);
 
 		for(
@@ -485,8 +586,44 @@ BTreeNode<K, V, CompareFn>* BTreeNode<K, V, CompareFn>::splitChild(const K& new_
 			this->deleteFromNode(temp_key);
 			this->writeNodePropToFrame(disk_block_old);
 			new_node->writeNodePropToFrame(disk_block_new);
+=======
+		//Removed this->isRoot as root is never child of anyone
+		new_node = new InternalNode<K, V>(new_block_num, this->M);
+
+
+		typename std::list<K>::const_iterator key_iter;
+		typename std::list<blocknum_t>::const_iterator block_iter;
+
+		//distribute keys
+		for (
+			old_key_iter = child_to_split->keys.begin(), old_block_iter = child_to_split->child_block_numbers.begin();
+			old_key_iter != (child_to_split->keys).end();
+			old_key_iter++, old_block_iter++
+			){
+			if(*old_key_iter == median_key){
+				//remove median from old node
+				//need to think about remove as it affects the iterator
+				//which can cause problems
+
+			} else if(*old_key_iter > median_key){
+				new_node->keys.push_back(*old_key_iter);
+				new_node->child_block_numbers.push_back(*old_block_iter);
+				//remove the key and block from oldnode
+				//need to think about remove as it affects the iterator
+				//which can cause problems
+			}
+
+>>>>>>> 124b4cf... Fixed datatypes. Changed insertElem method. added redistribution code to splitChild
 		}
+		//add the rightmost block number to new node
+		new_node->child_block_numbers.push_back(*old_block_iter)
+
+		//TODO: remove last remaining block number from old node
+
+
+		//TODO: adjust pointers and keys in "this" node
 	}
 
+	//adjust keys and pointers in node
 	return new_node;
 };

@@ -94,17 +94,13 @@ protected:
 	std::list<K> keys;
 	CompareFn cmpl;
 
-	virtual BTreeNode<K, V, CompareFn>* splitChild(const K&);
+	virtual BTreeNode<K, V, CompareFn>* splitChild(const BTreeNode<K, V, CompareFn>&);
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
 	};
 
 	~BTreeNode();
-
-	bool isSplitNeededForAdd() {
-		return (curr_keys == M - 1);
-	};
 
 	virtual bool isLeaf();
 	virtual void addToNode(const K&);
@@ -131,9 +127,9 @@ public:
 
 	// Will use the BufferedFrameWriter's static method to change the disk_block
 	void writeNodetoDisk(BufferFrame*);
-	
+
 	// Returns true if no. of keys present == M
-	bool isFull(){ return (keys.size() == M) }
+	bool isFull() { return (keys.size() == M - 1); }
 
 	// Finds Median of existing Key and new_key
 	K& findMedian();
@@ -196,7 +192,6 @@ private:
 	BufferedFile* buffered_file_internal;
 	BufferedFile* buffered_file_data;
 
-	//bool isRootLeaf;
 	BTreeNode<K, V, CompareFn>* root;
 	size_type sz;
 	size_type blocksize;
@@ -210,6 +205,11 @@ private:
 	/* makes an InternalNode : if first byte of block is 0
 	   makes a 	LeafNode     : if fisrt byte of block is 1
 	*/
+
+    BTreeNode<K, V, CompareFn>* splitChild(
+		BTreeNode<K, V, CompareFn>& child_to_split,
+		BTreeNode<K, V, CompareFn>& current_node
+	);
 
 public:
 	BTree(const char* pathname, size_type _blocksize) : blocksize(_blocksize), sz(0) {
@@ -384,7 +384,7 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 template <typename K, typename V, typename CompareFn>
 void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	BufferFrame* disk_block;
-	BTreeNode<K, V> * next_node;
+	BTreeNode<K, V, CompareFn> * next_node;
 
 	if (this->root == nullptr) {
 		// i.e. 'first' insert in the tree
@@ -400,34 +400,61 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 		blocknum_t next_block_num;
 
 		// Node for traversing the tree
-		BTreeNode<K, V, CompareFn>* trav = this->root;
+		BTreeNode<K, V, CompareFn>* trav = this->root, par;
 
 		// split the root if needed and make a new root
-
 		if (this->root->isFull()) {
+			blocknum_t old_root_block_num = this->root->block_number;
 			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
-			BTreeNode<K, V>* t = new TreeLeafNode(new_root_bnum, this->M, true);
-			//trav = t->splitChild();
-			this->root = t;
-			//TODO: Need to make changes. Need to think
+			
+			BTreeNode<K, V, CompareFn>* old_root = this->root;
+			//New root must be an InternalNode
+			BTreeNode<K, V, CompareFn>* new_root = new InternalNode<K, V, CompareFn>(new_root_bnum, this->M, true);
+
+			// CHECK IF THIS IS CORRECT
+			
+			// Add old root block number as left most child_block_number
+			new_root->child_block_numbers.push_back(old_root_block_num);
+			
+			// Set new_root to be the root of BTree
+			this->root = new_root;
+
+			//TODO: UPDATE HEADER BLOCK ON DISK INDICATING NEW ROOT
+
+			// make isRoot = false in old_root
+			old_root->isRoot = false;
+
+			// Split old root
+			this->splitChild(old_root, new_root);
+
+
+
+			//TODO: WRITING TO DISK MAY BE REQUIRED (DEPENDS IF WRITING TO DISK IS )
 		}
 
 		BTreeNode<K, V, CompareFn>* next_node;
 
-		while(trav && ! trav->isLeaf()) {
-
-			next_block_num = trav->findInNode(K);
-			next_node = getNodeFromBlockNum(next_block_num);
+		while (trav && ! trav->isLeaf()) {
+			next_block_num = trav->findInNode(new_key);
+			next_node = this->getNodeFromBlockNum(next_block_num);
 
 			// pro-active splitting
 			if (next_node->isFull()) {
 				// returns the proper next node
+				next_node = this->splitChild(next_node, trav);
+				delete trav;
 			} else {
 				next_block_num = trav->findInNode(new_key);
+				par = trav;
 				next_node = getNodeFromBlockNum(next_block_num);
 				delete trav;
-				trav = trav->splitChild(*next_node, new_key);
 			}
+			trav = next_node;
+		}
+
+		// split the leaf node too if its full
+		if (trav->isFull()) {
+			trav = this->splitChild(trav, par);
 		}
 
 		// always called on a leaf node - returns a block-offset pair
@@ -446,182 +473,131 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	}
 };
 
-<<<<<<< HEAD
 template <typename K, typename V, typename CompareFn>
-BTreeNode<K, V, CompareFn>* BTreeNode<K, V, CompareFn>::splitChild(const K& new_key) {
-	typename std::list<K>::const_iterator key_iter;
-	typename std::list<blocknum_t>::const_iterator block_iter;
-	typename std::list<blockOffsetPair>::const_iterator blockOffset_iter;
+K& BTreeNode<K, V, CompareFn>::findMedian(){
+	typename std::list<K>::const_iterator key_iterator;
 
-	BTreeNode<K, V, CompareFn>* new_node;
-	BufferFrame* disk_block;
-	blocknum_t new_block_num;
-	K temp_key;
-	blocknum_t temp_block;
-	blockOffsetPair temp_block_offset;
+	// increment till the middle element
+	key_iterator = this->keys.begin();
+	std::advance(
+		key_iterator, (int)(this->keys.size() / 2)
+	);
 
-	new_block_num = buffered_file_internal->allotBlock();
-	disk_block_new = buffered_file_internal->readBlock(new_block_num);
-	disk_block_old = buffered_file_internal->readBlock(this->block_number);
+	// return the middle element
+	return *key_iterator;
+};
 
-	if (this->isLeaf()) {
-		new_node = new TreeLeafNode<K, V, CompareFn>(new_block_num, this->M, this->isRoot);
+template <typename K, typename V, typename CompareFn>
+BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
+	BTreeNode<K, V, CompareFn>& child_to_split,
+	BTreeNode<K, V, CompareFn>& current_node
+) {
 
-		this->addToNode(new_key);
-		for(
-			int i = 0, key_iter = this->keys.begin(), blockOffset_iter = this->value_node_address.begin();
-			i <= (this->keys).size() / 2, key_iter != (this->keys).end();
-			key_iter++, blockOffset_iter++
-		) {
-			temp_key = *key_iter; 
-			temp_block_offset.block_number = *blockOffset_iter.block_number;
-			temp_block_offset.offset = *blockOffset_iter.offset;
-			new_node->addToNode(temp_key, temp_block);
-			this->deleteFromNode(temp_key);
-			this->writeNodePropToFrame(disk_block_old);
-			new_node->writeNodePropToFrame(disk_block_new);
-=======
-template <typename K, typename V>
-K& BTreeNode<K, V>::findMedian(){
-	//TODO: write median definition
-}
+	// In this method, 'current_node' refers to the node
+	// that initiated the split on its child 'child_to_split'
 
-template <typename K, typename V>
-BTreeNode<K, V>* splitChild(const BTreeNode<K,V>& child_to_split) {
+	// CRITICAL: The new_node is always created on the right
 
-	//In this method this refers to the node that initiated the split on its child child_to_split
+	blocknum_t new_block_num = buffered_file_internal->allotBlock();
+	BufferFrame* disk_block_new = buffered_file_internal->readBlock(new_block_num);
+	K median_key = child_to_split->findMedian();
+	TreeLeafNode<K, V, CompareFn>* new_node = new TreeLeafNode<K, V, CompareFn>(new_block_num, this->M);
 
-	new_block_num = buffered_file_internal->allotBlock();
-	disk_block_new = buffered_file_internal->readBlock(new_block_num);
-	K median_key = findMedian();
+	typename std::list<K>::const_iterator old_key_iter;
+	typename std::list<blockOffsetPair>::const_iterator old_block_iter;
 
-	
-
-
-	//disk_block_old = buffered_file_internal->readBlock(this->block_number);
-
-	// if (this->isLeaf()) {
-	// 	new_node = new TreeLeafNode<K, V>(new_block_num, this->M, this->isRoot);
-
-	// 	this->addToNode(new_key);
-	// 	for(
-	// 		int i = 0, key_iter = this->keys.begin(), block_iter = this->value_node_address.begin();
-	// 		i <= (this->keys).size() / 2, key_iter != (this->keys).end();
-	// 		key_iter++, block_iter++
-	// 	) {
-	// 		new_node->addToNode(*key_iter, *block_iter);
-	// 		this->deleteFromNode(*key_iter, *block_iter);
-	// 		this->writeNodetoDisk(disk_block_old);
-	// 		new_node->writeNodetoDisk(disk_block_new);
-	// 	}
-	// } else {
-	// 	new_node = new InternalNode<K, V>(new_block_num, this->M, this->isRoot);
-
-	// 	for(
-	// 		int i = 0, key_iter = this->keys.begin(), block_iter = this->child_block_numbers.begin();
-	// 		i <= (this->keys).size() / 2, key_iter != (this->keys).end();
-	// 		key_iter++, block_iter++
-	// 	) {
-	// 		new_node->addToNode(*key_iter, *block_iter);
-	// 		this->deleteFromNode(*key_iter, *block_iter);
-	// 		this->writeNodetoDisk(disk_block_old);
-	// 		new_node->writeNodetoDisk(disk_block_new);
-	// 	}
-	// }
-
-
-
-	if(child_to_split.isLeaf()){
-		//Removed this->isRoot as root is never child of anyone
-		new_node = new TreeLeafNode<K, V>(new_block_num, this->M);
-
-		//typename std::list<K>::const_iterator new_key_iter;
-		//typename std::list<blocknum_t>::const_iterator new_block_iter;
-
-		typename std::list<K>::const_iterator key_iter;
-		typename std::list<blockOffsetPair>::const_iterator block_iter;
+	if (child_to_split->isLeaf()) {
 
 		//distribute keys
 		for (
 			old_key_iter = child_to_split->keys.begin(), old_block_iter = child_to_split->value_node_address.begin();
-			old_key_iter != (child_block_number->keys).end();
-			old_key_iter++, old_block_iter++
-			){
-			if(*old_key_iter == median_key){
+			old_key_iter != (child_to_split->keys).end();
+			// no increment, read comments below
+		) {
+			if (eq(*old_key_iter, median_key)) {
 				//CRITICAL: MEDIAN KEY MUST BE ADDED TO NEW NODE IN CASE OF LEAF NODES
 				new_node->keys.push_back(*old_key_iter);
 				new_node->value_node_address.push_back(*old_block_iter);
-				//remove median from old node
-				//need to think about remove as it affects the iterator
-				//which can cause problems
 
-			} else if(*old_key_iter > median_key){
+				// erase and don't need to increment
+				// as it points already to the (previously) next elem in list
+				old_key_iter = child_to_split->keys.erase(old_key_iter);
+				old_block_iter = child_to_split->value_node_address.erase(old_block_iter);
+
+			} else if (cmpl(*old_key_iter, median_key)) {
 				new_node->keys.push_back(*old_key_iter);
 				new_node->value_node_address.push_back(*old_block_iter);
-				//remove the key and block from oldnode
-				//need to think about remove as it affects the iterator
-				//which can cause problems
-			}
 
->>>>>>> 124b4cf... Fixed datatypes. Changed insertElem method. added redistribution code to splitChild
+				// erase and don't need to increment
+				// as it points already to the (previously) next elem in list
+				old_key_iter = child_to_split->keys.erase(old_key_iter);
+				old_block_iter = child_to_split->value_node_address.erase(old_block_iter);
+			} else {
+				old_key_iter++;
+				old_block_iter++;
+			}
 		}
 
-
-		//TODO: adjust pointers and keys in "this" node
-		this->addToNode(median_key);
-
+		// TODO: adjust pointers and keys in  "this" node - What adjustment are you talking about here ?
+		//Done at end of method L: 564 - 580
 	} else {
-<<<<<<< HEAD
-		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M, this->isRoot);
-
-		for(
-			int i = 0, key_iter = this->keys.begin(), block_iter = this->child_block_numbers.begin();
-			i <= (this->keys).size() / 2, key_iter != (this->keys).end();
-			key_iter++, block_iter++
-		) {
-			temp_key = *key_iter; temp_block = *block_iter;
-			new_node->addToNode(temp_key, temp_block);
-			this->deleteFromNode(temp_key);
-			this->writeNodePropToFrame(disk_block_old);
-			new_node->writeNodePropToFrame(disk_block_new);
-=======
 		//Removed this->isRoot as root is never child of anyone
-		new_node = new InternalNode<K, V>(new_block_num, this->M);
+		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M);
 
-
-		typename std::list<K>::const_iterator key_iter;
-		typename std::list<blocknum_t>::const_iterator block_iter;
+		typename std::list<K>::const_iterator old_key_iter;
+		typename std::list<blocknum_t>::const_iterator old_block_iter;
 
 		//distribute keys
 		for (
 			old_key_iter = child_to_split->keys.begin(), old_block_iter = child_to_split->child_block_numbers.begin();
 			old_key_iter != (child_to_split->keys).end();
-			old_key_iter++, old_block_iter++
-			){
-			if(*old_key_iter == median_key){
-				//remove median from old node
-				//need to think about remove as it affects the iterator
-				//which can cause problems
-
-			} else if(*old_key_iter > median_key){
+			// No increment required, read comments below
+		) {
+			if (eq(*old_key_iter, median_key)) {
+				// erase and don't need to increment
+				// as it points already to the (previously) next elem in list
+				old_key_iter = this->keys.erase(old_key_iter);
+			} else if (cmpl(*old_key_iter, median_key)) {
 				new_node->keys.push_back(*old_key_iter);
 				new_node->child_block_numbers.push_back(*old_block_iter);
-				//remove the key and block from oldnode
-				//need to think about remove as it affects the iterator
-				//which can cause problems
+
+				// erase and don't need to increment
+				// as it points already to the (previously) next elem in list
+				old_key_iter = child_to_split->keys.erase(old_key_iter);
+				old_block_iter = child_to_split->child_block_numbers.erase(old_block_iter);
+			} else {
+				old_key_iter++, old_block_iter++;
 			}
-
->>>>>>> 124b4cf... Fixed datatypes. Changed insertElem method. added redistribution code to splitChild
 		}
+
+		current_node->addToNode(median_key);
+
 		//add the rightmost block number to new node
-		new_node->child_block_numbers.push_back(*old_block_iter)
+		new_node->child_block_numbers.push_back(*old_block_iter);
 
-		//TODO: remove last remaining block number from old node
+		//TODO: remove last remaining block number from old node - Explain this to me over chat
 
-
-		//TODO: adjust pointers and keys in "this" node
+		//TODO: adjust pointers and keys in "this" node - What adjustment are you talking about here ?
+		//DOne at end of method L: 564 - 580
 	}
 
-	//adjust keys and pointers in node
+
+	typename std::list<K>::const_iterator curr_key_iter = current_node->keys.begin();
+	typename std::list<blocknum_t>::const_iterator curr_block_iter = current_node->child_block_numbers.begin();
+	// adjust keys and pointers in node
+
+
+	while(*curr_block_iter != child_to_split->block_number){
+		curr_block_iter++;
+		curr_key_iter++;
+	}
+
+	curr_block_iter++;
+	curr_key_iter++;
+
+	current_node->keys.insert(curr_key_iter, median_key);
+	current_node->child_block_numbers.insert(curr_key_iter, new_node->block_number)
+
+
 	return new_node;
 };

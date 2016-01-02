@@ -404,12 +404,32 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 		// split the root if needed and make a new root
 		if (this->root->isFull()) {
+			blocknum_t old_root_block_num = this->root->block_number;
 			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
-			BTreeNode<K, V, CompareFn>* t = new TreeLeafNode<K, V, CompareFn>(new_root_bnum, this->M, true);
+			
+			BTreeNode<K, V, CompareFn>* old_root = this->root;
+			//New root must be an InternalNode
+			BTreeNode<K, V, CompareFn>* new_root = new InternalNode<K, V, CompareFn>(new_root_bnum, this->M, true);
 
-			// TODO: Need to make changes to handle the root's splitting properly
-			// trav = t->splitChild();
-			this->root = t;
+			// CHECK IF THIS IS CORRECT
+			
+			// Add old root block number as left most child_block_number
+			new_root->child_block_numbers.push_back(old_root_block_num);
+			
+			// Set new_root to be the root of BTree
+			this->root = new_root;
+
+			//TODO: UPDATE HEADER BLOCK ON DISK INDICATING NEW ROOT
+
+			// make isRoot = false in old_root
+			old_root->isRoot = false;
+
+			// Split old root
+			this->splitChild(old_root, new_root);
+
+
+
+			//TODO: WRITING TO DISK MAY BE REQUIRED (DEPENDS IF WRITING TO DISK IS )
 		}
 
 		BTreeNode<K, V, CompareFn>* next_node;

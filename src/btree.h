@@ -501,8 +501,8 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 
 				// erase and don't need to increment
 				// as it points already to the (previously) next elem in list
-				child_to_split->keys.erase(old_key_iter);
-				child_to_split->value_node_address.erase(old_block_iter);
+				old_key_iter = child_to_split->keys.erase(old_key_iter);
+				old_block_iter = child_to_split->value_node_address.erase(old_block_iter);
 
 			} else if (cmpl(*old_key_iter, median_key)) {
 				new_node->keys.push_back(*old_key_iter);
@@ -510,8 +510,8 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 
 				// erase and don't need to increment
 				// as it points already to the (previously) next elem in list
-				child_to_split->keys.erase(old_key_iter);
-				child_to_split->value_node_address.erase(old_block_iter);
+				old_key_iter = child_to_split->keys.erase(old_key_iter);
+				old_block_iter = child_to_split->value_node_address.erase(old_block_iter);
 			} else {
 				old_key_iter++;
 				old_block_iter++;
@@ -535,15 +535,15 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 			if (eq(*old_key_iter, median_key)) {
 				// erase and don't need to increment
 				// as it points already to the (previously) next elem in list
-				this->keys.erase(old_key_iter);
+				old_key_iter = this->keys.erase(old_key_iter);
 			} else if (cmpl(*old_key_iter, median_key)) {
 				new_node->keys.push_back(*old_key_iter);
 				new_node->child_block_numbers.push_back(*old_block_iter);
 
 				// erase and don't need to increment
 				// as it points already to the (previously) next elem in list
-				child_to_split->keys.erase(old_key_iter);
-				child_to_split->child_block_numbers.erase(old_block_iter);
+				old_key_iter = child_to_split->keys.erase(old_key_iter);
+				old_block_iter = child_to_split->child_block_numbers.erase(old_block_iter);
 			} else {
 				old_key_iter++, old_block_iter++;
 			}

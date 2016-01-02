@@ -1,7 +1,7 @@
 #include "stxxl.h"
 
 #define NUM_INSERT 1000000
-typedef stxxl::VECTOR_GENERATOR<int>::result stxxl_vector;
+typedef stxxl::VECTOR_GENERATOR<int,1,5,4096>::result stxxl_vector;
 
 int main()
 {

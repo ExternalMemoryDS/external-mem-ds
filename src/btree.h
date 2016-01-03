@@ -96,7 +96,6 @@ protected:
 	bool isChangedInMem;
 	BufferFrame* my_block;
 
-	virtual BTreeNode<K, V, CompareFn>* splitChild(const BTreeNode<K, V, CompareFn>&);
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
@@ -238,7 +237,8 @@ private:
 
     BTreeNode<K, V, CompareFn>* splitChild(
 		BTreeNode<K, V, CompareFn>& child_to_split,
-		BTreeNode<K, V, CompareFn>& current_node
+		BTreeNode<K, V, CompareFn>& current_node,
+		const K& add_key
 	);
 
     // only called for adding to a TreeLeafNode, so const V&
@@ -636,7 +636,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			old_root->isRoot = false;
 
 			// Split old root
-			trav = this->splitChild(old_root, new_root);
+			trav = this->splitChild(old_root, new_root, new_key);
 			//TODO: WRITING TO DISK MAY BE REQUIRED (DEPENDS IF WRITING TO DISK IS )
 		}
 
@@ -649,7 +649,8 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			// pro-active splitting
 			if (next_node->isFull()) {
 				// returns the proper next node
-				next_node = this->splitChild(next_node, trav);
+
+				next_node = this->splitChild(next_node, trav, new_key);
 
 				// destructor will automatically write it to the block
 				// plus our setter methods will mark a node's prop 'isChangedInMem'
@@ -708,7 +709,8 @@ K& BTreeNode<K, V, CompareFn>::findMedian() {
 template <typename K, typename V, typename CompareFn>
 BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	BTreeNode<K, V, CompareFn>& child_to_split,
-	BTreeNode<K, V, CompareFn>& current_node
+	BTreeNode<K, V, CompareFn>& current_node,
+	const K& add_key
 ) {
 
 	// In this method, 'current_node' refers to the node
@@ -826,7 +828,9 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	delete current_node;
 	delete child_to_split;
 
-	return new_node;
+	
+	if(!cmpl(*add_key, median_key) && !eq(*add_key, median_key)) return child_to_split;
+	else return new_node;
 };
 
 

@@ -10,6 +10,7 @@ using namespace	std;
 typedef long blocknum_t;
 typedef long offset_t;
 typedef long long int size_type;
+typedef bool node_t;
 
 //CONSTANTS
 const blocknum_t NULL_BLOCK = -1;
@@ -62,7 +63,7 @@ const offset_t NULL_OFFSET = -1;
                                     ---------------------
 	Node-type identifier            1 byte          0: Internal, 1: Leaf
 	Parent node block no.           sizeof(long)
-	No of empty slots               sizeof(int)
+	No of empty slots               sizeof(long)
 	M keys                          M * sizeof(K)
 	M + 1 pointers                  (M+1)*sizeof(long) block numbers
 
@@ -96,7 +97,6 @@ protected:
 	bool isChangedInMem;
 	BufferFrame* my_block;
 
-	virtual BTreeNode<K, V, CompareFn>* splitChild(const BTreeNode<K, V, CompareFn>&);
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
@@ -224,6 +224,8 @@ private:
 	size_type blocksize;
 	long M; // Maximum M keys in the internal nodes
 
+	//root block number
+	blocknum_t root_block_num;
 	CompareFn cmpl;
 
 	int calculateM(const size_t blocksize, const size_t key_size);
@@ -239,7 +241,8 @@ private:
 
     BTreeNode<K, V, CompareFn>* splitChild(
 		BTreeNode<K, V, CompareFn>& child_to_split,
-		BTreeNode<K, V, CompareFn>& current_node
+		BTreeNode<K, V, CompareFn>& current_node,
+		const K& add_key
 	);
 
     // only called for adding to a TreeLeafNode, so const V&
@@ -637,7 +640,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			old_root->isRoot = false;
 
 			// Split old root
-			trav = this->splitChild(old_root, new_root);
+			trav = this->splitChild(old_root, new_root, new_key);
 			//TODO: WRITING TO DISK MAY BE REQUIRED (DEPENDS IF WRITING TO DISK IS )
 		}
 
@@ -650,7 +653,8 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			// pro-active splitting
 			if (next_node->isFull()) {
 				// returns the proper next node
-				next_node = this->splitChild(next_node, trav);
+
+				next_node = this->splitChild(next_node, trav, new_key);
 
 				// destructor will automatically write it to the block
 				// plus our setter methods will mark a node's prop 'isChangedInMem'
@@ -709,7 +713,8 @@ K& BTreeNode<K, V, CompareFn>::findMedian() {
 template <typename K, typename V, typename CompareFn>
 BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	BTreeNode<K, V, CompareFn>& child_to_split,
-	BTreeNode<K, V, CompareFn>& current_node
+	BTreeNode<K, V, CompareFn>& current_node,
+	const K& add_key
 ) {
 
 	// In this method, 'current_node' refers to the node
@@ -827,7 +832,9 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	delete current_node;
 	delete child_to_split;
 
-	return new_node;
+	
+	if(!cmpl(*add_key, median_key) && !eq(*add_key, median_key)) return child_to_split;
+	else return new_node;
 };
 
 
@@ -866,3 +873,94 @@ void BTree<K, V, CompareFn>::addToNode(
 	current_node->setIsChangedInMem(true);
 
 };
+
+
+template <typename K, typename V, typename CompareFn>
+BTreeNode<K, V, CompareFn>& BTree<K, V, CompareFn>::getNodeFromBlockNum(blocknum_t block_number){
+	
+	//TODO: How to handle case of root?
+
+	bool is_this_root;
+	BTreeNode<K, V, CompareFn> * new_node;
+	BufferFrame * buff_frame =  this->buffered_file_internal->readBlock(block_number);
+	node_t node_type_id = BufferedFrameReader::read<node_t>(buff_frame, 0);
+
+	long num_empty_slots;
+	long num_keys;
+	K* key_pointer;
+
+	if(this->root_block_num == block_number){
+		is_this_root = true;
+	} else {
+		is_this_root = false;
+	}
+
+	if(node_type_id){
+		// make a leaf node
+		num_empty_slots = BufferedFrameReader::read<node_t>(buff_frame, 1 + 3*sizeof(long));
+		num_keys =  (this->M) - (num_empty_slots);
+
+		new_node = new TreeLeafNode<K, V, CompareFn>(block_number, M, is_this_root);
+
+		long keys_offset = 1+4*sizeof(long);
+		long next_block_addr = keys_offset + (this->M)*sizeof(K);
+
+		blocknum_t child_b_num;
+		offset_t child_offset_in_data_file;
+
+		blockOffsetPair *bo_pair = new blockOffsetPair();
+
+		for(i = 0; i < num_keys; i++){
+			key_pointer = BufferedFrameReader::readPtr<K>(buff_frame, keys_offset);
+			this->keys.push_back(*key_pointer);
+
+			child_b_num = BufferedFrameReader::read<blocknum_t>(buff_frame, next_block_addr);
+			child_offset_in_data_file = BufferedFrameReader::read<offset_t>(buff_frame, next_block_addr + sizeof(block_number_t));
+
+			bo_pair->block_number = child_b_num;
+			bo_pair->offset = child_offset_in_data_file;
+
+			this->value_node_address.push_back(*bo_pair);
+
+			keys_offset = keys_offset + sizeof(K);
+			next_block_addr = next_block_addr + sizeof(blocknum_t) + sizeof(offset_t);
+
+		}
+
+
+	} else {
+		// make an internal node
+		new_node = new InternalNode<K, V, CompareFn>(block_number, M, is_this_root);
+
+
+		num_empty_slots = BufferedFrameReader::read<node_t>(buff_frame, 1 + sizeof(long));
+		num_keys =  (this->M) - (num_empty_slots);
+
+		long keys_offset = 1 + 2*sizeof(long);
+		long next_block_addr = keys_offset + (this->M)*sizeof(K);
+
+		blocknum_t child_b_num;
+
+		for(i = 0; i < num_keys; i++){
+			
+			key_pointer = BufferedFrameReader::readPtr<K>(buff_frame, keys_offset);
+			this->keys.push_back(*key_pointer);
+
+			child_b_num = BufferedFrameReader::read<blocknum_t>(buff_frame, new_block_offset);
+			this->child_block_numbers.push_back(child_b_num);
+
+			keys_offset = keys_offset + sizeof(K);
+			next_block_addr = next_block_addr + sizeof(block_number_t); 
+		}
+
+		// get rightmost i.e M+1 st block number 
+		this->child_block_numbers.push_back(child_b_num);
+
+
+	}
+
+	new_node->my_block = buff_frame;
+
+
+	return *new_node;
+}

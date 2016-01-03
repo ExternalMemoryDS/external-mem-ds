@@ -46,7 +46,7 @@ const offset_t NULL_OFFSET = -1;
 	“BTREE”                         8 bytes         Identifies the data structure
 	Element Key size                4 bytes         generally from sizeof(K)
 	Element Value size              4 bytes         generally from sizeof(V)
-	Root Node block number          sizeof(long)    block no. of the root of Btree
+	Root Node block number          sizeof(long)    block no. of the root of BTree
 	Total blocks allocated          <temp>          <temp>
 	Head block no.                  sizeof(long)    traversing DLL in leaves
 	Tail block no.                  sizeof(long)    traversing DLL in leaves
@@ -284,7 +284,180 @@ public:
 	size_type size() {
 		return sz;
 	}
+
+	TreeLeafNode<K, V, CompareFn>* getSmallestValueNode() {
+		BTreeNode<K, V, CompareFn>* curr = this->root, new_node;
+
+		while (! curr.isLeaf()) {
+			new_node = this->getNodeFromBlockNum(
+				curr->child_block_numbers.front()
+			);
+			delete curr;
+			curr = new_node;
+		}
+		return curr;
+	}
+
+	TreeLeafNode<K, V, CompareFn>* getLargestValueNode() {
+		BTreeNode<K, V, CompareFn>* curr = this->root, new_node;
+
+		while (! curr.isLeaf()) {
+			new_node = this->getNodeFromBlockNum(
+				curr->child_block_numbers.back()
+			);
+			delete curr;
+			curr = new_node;
+		}
+		return curr;
+	}
+
+
+	// THE ITERATOR and the CONST_ITERATOR CLASS
+	class iterator : public std::iterator<std::random_access_iterator_tag, V, size_type, V*, V&> {
+	friend class BTree;
+	private:
+		TreeLeafNode<K, V, CompareFn>* head, tail, curr;
+		V* value;
+		BufferedFile* data_file;
+
+		// for iterating in 'curr'
+		typename std::list<blockOffsetPair>::const_iterator block_iter;
+
+	public:
+		iterator() {
+			head = tail = curr = nullptr;
+		};
+
+		iterator(BTree<K, V, CompareFn>* B, bool start_end = true) {
+			head = B->getSmallestValueNode();
+			tail = B->getLargestValueNode();
+			data_file = B->buffered_file_data;
+
+			if (start_end) {
+				curr = head;
+				block_iter = curr->value_node_address.begin();
+
+				value = BufferedFrameReader::readPtr<V>(
+					data_file->readBlock((*block_iter).block_number),
+					(*block_iter).offset
+				);
+			} else {
+				curr = tail;
+				block_iter = ++((curr->value_node_address.end()));
+			}
+		}
+
+		bool operator== (const iterator& rhs);
+		bool operator!= (const iterator& rhs) { return !(operator==(rhs)); };
+		V& operator* ();
+		iterator& operator++ ();
+		iterator& operator-- ();
+
+		// iterator operator++(int) { iterator tmp(*this); operator++(); return tmp; }
+		// iterator operator--(int) { iterator tmp(*this); operator--(); return tmp; }
+		// iterator operator+ (size_type n) { iterator tmp(*this); tmp.index += n; return tmp; }
+		// iterator operator- (size_type n) { iterator tmp(*this); tmp.index -= n; return tmp; }
+		// bool operator> (const iterator& rhs);
+		// bool operator< (const iterator& rhs);
+		// bool operator<= (const iterator& rhs);
+		// bool operator>= (const iterator& rhs);
+		// iterator& operator+= (size_type n) { index += n; return *this; }
+		// iterator& operator-= (size_type n) { index -= n; return *this; }
+		// T& operator[] (size_type n) { return *(*this+n); }
+		// typename std::iterator<std::random_access_iterator_tag, T, long long int, T*, T&>::difference_type operator- (const iterator& rhs) { return index - rhs.index; }
+	};
+
+	iterator begin();
+	iterator end();
 };
+
+template <typename K, typename V, typename CompareFn>
+typename BTree<K, V, CompareFn>::iterator BTree<K, V, CompareFn>::begin() {
+	iterator iter(this);
+	return iter;
+}
+
+template <typename K, typename V, typename CompareFn>
+typename BTree<K, V, CompareFn>::iterator BTree<K, V, CompareFn>::end() {
+	iterator iter(this, false);
+	return iter;
+}
+
+template <typename K, typename V, typename CompareFn>
+V& BTree<K, V, CompareFn>::iterator::operator* () {
+	return value;
+}
+
+template <typename K, typename V, typename CompareFn>
+typename BTree<K, V, CompareFn>::iterator& BTree<K, V, CompareFn>::iterator::operator++() {
+
+	BTreeNode<K, V, CompareFn>* new_node;
+	// i.e. all keys in this 'curr' have been traversed
+	if (++block_iter == curr->value_node_address.end()) {
+		if (curr != tail) {
+			new_node = curr->getNodeFromBlockNum(
+				curr->next
+			);
+			delete curr;
+			curr = new_node;
+		} else {
+			return nullptr;
+		}
+		block_iter = curr->value_node_address.begin();
+	} else {
+		block_iter++;
+	}
+
+	value = BufferedFrameReader::readPtr<V>(
+		data_file->readBlock(
+			(*block_iter).block_number
+		),
+		(*block_iter).offset
+	);
+
+	return *this;
+}
+
+template <typename K, typename V, typename CompareFn>
+bool BTree<K, V, CompareFn>::iterator::operator== (const iterator& rhs) {
+	return (
+		(rhs.curr == curr)
+		&& (rhs.head == head)
+		&& (rhs.tail == tail)
+		&& (*rhs == *this)
+	);
+}
+
+
+template <typename K, typename V, typename CompareFn>
+typename BTree<K, V, CompareFn>::iterator& BTree<K, V, CompareFn>::iterator::operator--() {
+
+	BTreeNode<K, V, CompareFn>* new_node;
+	// i.e. all keys in this 'curr' have been traversed
+	if (block_iter == curr->value_node_address.begin()) {
+		if (curr != head) {
+			new_node = curr->getNodeFromBlockNum(
+				curr->prev
+			);
+			delete curr;
+			curr = new_node;
+		} else {
+			return nullptr;
+		}
+		block_iter = --(curr->value_node_address.end());
+	} else {
+		block_iter--;
+	}
+
+	value = BufferedFrameReader::readPtr<V>(
+		data_file->readBlock(
+			(*block_iter).block_number
+		),
+		(*block_iter).offset
+	);
+
+	return *this;
+}
 
 template <typename K, typename V, typename CompareFn>
 int BTree<K, V, CompareFn>::calculateM(const size_t blocksize, const size_t key_size) {
@@ -515,6 +688,8 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 		// so that destructor does not write unnecessarily
 		delete trav;
 	}
+
+	this->sz++;
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -595,7 +770,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 		BufferedFrameWriter::write<blocknum_t>(disk_block, 1, child_to_split->getNextBlockNo());
 
 		// now update the next of child_to_split
-		child_to_split->setNextBlockNo(next_node->getBlockNo());
+		child_to_split->setNextBlockNo(new_node->getBlockNo());
 	} else {
 		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M);
 

@@ -150,7 +150,7 @@ public:
 	void addToNode(const K&);
 	void addToNode(const K&, blocknum_t);
 	void deleteFromNode(const K&);
-	bool isLeaf(){ return false; }
+	bool isLeaf() { return false; }
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -169,7 +169,7 @@ public:
 	void addToNode(const K&, blockOffsetPair);
  	void deleteFromNode(const K&);
 
-    bool isLeaf(){ return true; }
+    bool isLeaf() { return true; }
 };
 
 /**
@@ -292,11 +292,11 @@ V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	// Node for traversing the tree
 	BTreeNode<K, V, CompareFn>* head = root;
 
-	while(! head.isLeaf()){
+	while (! head.isLeaf()) {
 
 		// always called on an internal node
 		next_block_num = head->findInNode(search_key);
-		if(next_block_num == NULL_BLOCK) return nullptr;
+		if (next_block_num == NULL_BLOCK) return nullptr;
 
 		BTreeNode<K, V, CompareFn>* next_node = getNodeFromBlockNum(next_block_num);
 		head = next_node;
@@ -347,7 +347,7 @@ blocknum_t InternalNode<K, V, CompareFn>::findInNode(const K& find_key) {
 		key_iter = this->keys.begin(), block_iter = this->child_block_number.begin();
 		key_iter != (this->keys).end();
 		key_iter++, block_iter++
-	){
+	) {
 		if (cmpl(*key_iter, find_key)) {
 			return *block_iter;
 		}
@@ -366,7 +366,7 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 		key_iter = this->keys.begin(), block_iter = this->value_node_address.begin();
 		key_iter != (this->keys).end();
 		key_iter++, block_iter++
-	){
+	) {
 		if (eq(*key_iter, find_key)) {
 			reqd_block.block_number = (*block_iter).block_number;
 			reqd_block.offset = (*block_iter).offset;
@@ -384,7 +384,7 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 template <typename K, typename V, typename CompareFn>
 void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	BufferFrame* disk_block;
-	BTreeNode<K, V, CompareFn> * next_node;
+	BTreeNode<K, V, CompareFn>* next_node;
 
 	if (this->root == nullptr) {
 		// i.e. 'first' insert in the tree
@@ -395,7 +395,6 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 		this->root->writeNodetoDisk(disk_block);
 	} else {
-
 		blockOffsetPair valueAddr;
 		blocknum_t next_block_num;
 
@@ -406,16 +405,15 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 		if (this->root->isFull()) {
 			blocknum_t old_root_block_num = this->root->block_number;
 			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
-			
+
 			BTreeNode<K, V, CompareFn>* old_root = this->root;
 			//New root must be an InternalNode
 			BTreeNode<K, V, CompareFn>* new_root = new InternalNode<K, V, CompareFn>(new_root_bnum, this->M, true);
 
 			// CHECK IF THIS IS CORRECT
-			
 			// Add old root block number as left most child_block_number
 			new_root->child_block_numbers.push_back(old_root_block_num);
-			
+
 			// Set new_root to be the root of BTree
 			this->root = new_root;
 
@@ -426,8 +424,6 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 			// Split old root
 			this->splitChild(old_root, new_root);
-
-
 
 			//TODO: WRITING TO DISK MAY BE REQUIRED (DEPENDS IF WRITING TO DISK IS )
 		}
@@ -452,11 +448,6 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			trav = next_node;
 		}
 
-		// split the leaf node too if its full
-		if (trav->isFull()) {
-			trav = this->splitChild(trav, par);
-		}
-
 		// always called on a leaf node - returns a block-offset pair
 		valueAddr = trav->findInNode(new_key);
 
@@ -474,7 +465,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 };
 
 template <typename K, typename V, typename CompareFn>
-K& BTreeNode<K, V, CompareFn>::findMedian(){
+K& BTreeNode<K, V, CompareFn>::findMedian() {
 	typename std::list<K>::const_iterator key_iterator;
 
 	// increment till the middle element
@@ -537,11 +528,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 				old_block_iter++;
 			}
 		}
-
-		// TODO: adjust pointers and keys in  "this" node - What adjustment are you talking about here ?
-		//Done at end of method L: 564 - 580
 	} else {
-		//Removed this->isRoot as root is never child of anyone
 		new_node = new InternalNode<K, V, CompareFn>(new_block_num, this->M);
 
 		typename std::list<K>::const_iterator old_key_iter;
@@ -570,24 +557,15 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 			}
 		}
 
-		current_node->addToNode(median_key);
-
 		//add the rightmost block number to new node
 		new_node->child_block_numbers.push_back(*old_block_iter);
-
-		//TODO: remove last remaining block number from old node - Explain this to me over chat
-
-		//TODO: adjust pointers and keys in "this" node - What adjustment are you talking about here ?
-		//DOne at end of method L: 564 - 580
 	}
 
 
 	typename std::list<K>::const_iterator curr_key_iter = current_node->keys.begin();
 	typename std::list<blocknum_t>::const_iterator curr_block_iter = current_node->child_block_numbers.begin();
-	// adjust keys and pointers in node
 
-
-	while(*curr_block_iter != child_to_split->block_number){
+	while (*curr_block_iter != child_to_split->block_number) {
 		curr_block_iter++;
 		curr_key_iter++;
 	}
@@ -595,9 +573,9 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	curr_block_iter++;
 	curr_key_iter++;
 
+	// adjust keys and pointers in parent node
 	current_node->keys.insert(curr_key_iter, median_key);
-	current_node->child_block_numbers.insert(curr_key_iter, new_node->block_number)
-
+	current_node->child_block_numbers.insert(curr_key_iter, new_node->block_number);
 
 	return new_node;
 };

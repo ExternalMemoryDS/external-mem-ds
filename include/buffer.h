@@ -85,6 +85,77 @@ public:
 			return (void*)((char*)frame->data + offset);
 		}
 	};
+
+	class FramePool
+	{
+		const int pool_size;
+		BufferFrame* dllist;
+		BufferFrame* head;
+
+	public:
+		FramePool(const BufferedFile* file, int buffer_pool_size) : pool_size(buffer_pool_size)
+		{
+			dllist = new BufferFrame[pool_size]();
+			for(int i=0; i<pool_size; i++)
+				dllist[i].setBufferedFile(file);
+			head = new BufferFrame(file);
+
+			head->next = dllist;
+			head->prev = (dllist + pool_size - 1);
+			dllist[0].next = (dllist+1);
+			dllist[0].prev = head;
+			dllist[pool_size-1].next = head;
+			dllist[pool_size-1].prev = dllist+pool_size-2;
+
+			for(auto i=1; i< pool_size-1; i++)
+			{
+				dllist[i].next = (dllist + i + 1);
+				dllist[i].prev = (dllist + i - 1);
+			}
+		}
+		~FramePool()
+		{
+			for(auto i=0; i < pool_size; i++)
+			{
+				if(dllist[i].is_dirty)
+				{
+					pwrite(dllist[i].file_ref->fd, dllist[i].data, dllist[i].file_ref->block_size, dllist[i].file_ref->getblockoffset(dllist[i].block_number));
+				}
+			}
+			delete [] dllist;
+			delete head;
+		}
+		BufferFrame* getHead()
+		{
+			return head;
+		}
+		BufferFrame* getNewFrame()
+		{
+			return head->next;
+		}
+		void doAccessUpdate(BufferFrame* ptr)
+		{
+			ptr->next->prev = ptr->prev;
+			ptr->prev->next = ptr->next;
+			ptr->next = head;
+			ptr->prev = head->prev;
+			head->prev->next = ptr;
+			head->prev = ptr;
+		}
+		void removeFrame(BufferFrame* ptr)
+		{
+			ptr->next->prev = ptr->prev;
+			ptr->prev->next = ptr->next;
+			ptr->next = head->next;
+			ptr->prev = head;
+			head->next->prev = ptr;
+			head->next = ptr;
+
+			ptr->is_valid = false;
+			ptr->is_dirty = false;
+			ptr->block_number = -1;
+		}
+	};
 	
 private:
 	int fd;
@@ -92,14 +163,13 @@ private:
 	const int buffer_pool_size;
     
 	long last_block_alloted;
-	
-	BufferFrame* frame_pool;
-	BufferFrame* free_list_head;
+
+	FramePool* frame_pool;
 	BufferFrame* header;
 	
 	std::unordered_map< long, BufferFrame* > block_hash;
 
-	off_t getblockoffset(long blknbr) { return (off_t) (blknbr * block_size); }
+	off_t getblockoffset(long blknbr) const { return (off_t) (blknbr * block_size); }
 
 public:
 	// default numbers are arbitrary. change to best value.
@@ -125,10 +195,7 @@ BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved
 		throw std::runtime_error{"Unable to lock file"};
 	}
 	
-	frame_pool = new BufferFrame[buffer_pool_size]();
-	for(int i=0; i<buffer_pool_size; i++)
-		frame_pool[i].setBufferedFile(this);
-	free_list_head = new BufferFrame(this);
+	frame_pool = new FramePool(this,buffer_pool_size);
 	header = new BufferFrame(this);
 	
 	header->is_valid = true;
@@ -136,19 +203,6 @@ BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved
 	pread(fd, header->data, block_size, getblockoffset(0));
 	
 	last_block_alloted = BufferedFrameReader::read<long>(header, 0);
-	
-	free_list_head->next = frame_pool;
-	free_list_head->prev = (frame_pool + buffer_pool_size - 1);
-	frame_pool[0].next = (frame_pool+1);
-	frame_pool[0].prev = free_list_head;
-	frame_pool[buffer_pool_size-1].next = free_list_head;
-	frame_pool[buffer_pool_size-1].prev = frame_pool+buffer_pool_size-2;
-	
-	for(auto i=1; i< buffer_pool_size-1; i++)
-	{
-		frame_pool[i].next = (frame_pool + i + 1);
-		frame_pool[i].prev = (frame_pool + i - 1);
-	}
 }
 
 BufferedFile::~BufferedFile()
@@ -157,14 +211,8 @@ BufferedFile::~BufferedFile()
 	*last_block_header = last_block_alloted;
 	
 	pwrite(fd, header->data, block_size, getblockoffset(0));
-	
-	for(auto i=0; i < buffer_pool_size; i++)
-	{
-		if(frame_pool[i].is_dirty)
-		{
-			pwrite(fd, frame_pool[i].data, block_size, getblockoffset(frame_pool[i].block_number));
-		}
-	}
+
+	delete frame_pool;
 
 	ftruncate(fd, (last_block_alloted+1)*block_size);
 
@@ -173,8 +221,6 @@ BufferedFile::~BufferedFile()
 	flock(fd, LOCK_UN | LOCK_NB);
 	close(fd);
 	delete header;
-	delete [] frame_pool;
-	delete free_list_head;
 }
 
 BufferedFile::BufferFrame* BufferedFile::readHeader()
@@ -194,13 +240,14 @@ long BufferedFile::allotBlock()
 	return last_block_alloted;
 }
 
+//incomplete modularization
 BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 {
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
 	if(got == block_hash.end())
 	{
 		BufferFrame *alloted;
-		alloted = free_list_head->next;
+		alloted = frame_pool->getNewFrame();
 		
 		if(alloted->is_valid && alloted->is_dirty)
 		{
@@ -211,13 +258,10 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 		{
 			block_hash.erase(alloted->block_number);
 		}
+
+		frame_pool->doAccessUpdate(alloted);
 		
-		alloted->next->prev = free_list_head;
-		free_list_head->next = alloted->next;
-		alloted->next = free_list_head;
-		alloted->prev = free_list_head->prev;
-		free_list_head->prev->next = alloted;
-				
+		//to be modularized yet
 		alloted->is_valid = true;		
 		alloted->block_number = block_number;
 		BufferedFrameWriter::memset(alloted, 0, 0, block_size);
@@ -230,23 +274,12 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 	}
 	else
 	{
-		BufferFrame *accessed, *accessed_prev, *accessed_next;
-		accessed = got->second;
-		accessed_next = accessed->next;
-		accessed_prev = accessed->prev;
-		
-		accessed_prev->next = accessed_next;
-		accessed_next->prev = accessed_prev;
-		
-		accessed->prev = free_list_head->prev;
-		accessed->next = free_list_head;
-		free_list_head->prev->next = accessed;
-		free_list_head->prev = accessed;
-		
+		frame_pool->doAccessUpdate(got->second);
 		return got->second;
 	}
 }
 
+//inclomplete modularization updates
 void BufferedFile::writeBlock(long block_number)
 {
 	if(block_number > last_block_alloted)
@@ -260,10 +293,15 @@ void BufferedFile::writeBlock(long block_number)
 	}
 }
 
+//verify removeFrame operation
 void BufferedFile::deleteBlock(long block_number) {
 	if(block_number == 0)
 		return;
 	
+	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
+	if(got!=block_hash.end())
+		frame_pool->removeFrame(got->second);
+
 	last_block_alloted = block_number - 1;
 	
 	return;

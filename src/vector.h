@@ -126,7 +126,7 @@ public:
 	void push_back(const T& elem);
 	void pop_back();
 	
-	void clear();	
+	void clear();
 	void erase(iterator start, iterator end);
 	
 	void insert(iterator pos, const T& elem);
@@ -344,15 +344,6 @@ void vector<T>::insert(vector<T>::iterator pos, InputIterator first, InputIterat
 	size_type position = pos.index;
 	if(position > sz)
 		throw std::out_of_range{"vector::insert()"};
-	if(position == sz)
-	{
-		while(first!=last)
-		{
-			push_back(*first);
-			++first;
-		}
-		return;
-	}
 	
 	auto num_element_insert = std::distance(first, last);
 	

@@ -226,7 +226,7 @@ public:
 	}
 
 	// Finds Median of existing Keys and new_key
-	K& findMedian();
+	K findMedian();
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -456,7 +456,7 @@ public:
 		delete buffered_file_data;
 	}
 
-	V& searchElem(const K& key);
+	V searchElem(const K& key);
 	void insertElem(const K& key, const V& value);
 	void deleteElem(const K& key);
 	void clearTree();
@@ -575,7 +575,7 @@ typename BTree<K, V, CompareFn>::iterator BTree<K, V, CompareFn>::end() {
 }
 
 template <typename K, typename V, typename CompareFn>
-V& BTree<K, V, CompareFn>::iterator::operator* () {
+V BTree<K, V, CompareFn>::iterator::operator* () {
 	return value;
 }
 
@@ -691,7 +691,7 @@ int BTree<K, V, CompareFn>::calculateM(const size_t blocksize, const size_t key_
 };
 
 template <typename K, typename V, typename CompareFn>
-V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
+V BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	blockOffsetPair valueAddr;
 	blocknum_t next_block_num;
 
@@ -703,7 +703,9 @@ V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 
 		// always called on an internal node
 		next_block_num = head->findInNode(search_key);
-		if (next_block_num == NULL_BLOCK) return nullptr;
+		if (next_block_num == NULL_BLOCK) {
+			//TODO: exception
+		}
 
 		BTreeNode<K, V, CompareFn>* next_node
 			= this->getNodeFromBlockNum(next_block_num);
@@ -718,12 +720,12 @@ V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	if (valueAddr.block_number == NULL_BLOCK
 		|| valueAddr.offset == NULL_OFFSET
 	) {
-		return nullptr;
+		//TODO: exception
 	}
 
 	// otherwise read the value from the block in data file and return
 	BufferFrame* buff = buffered_file_data->readBlock(valueAddr.block_number);
-	return BufferedFrameReader::readPtr<V>(buff, valueAddr.offset);
+	return BufferedFrameReader::read<V>(buff, valueAddr.offset);
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -791,7 +793,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 	temp = this->getNodeFromBlockNum(root_block_num);
 
-	if (temp == nullptr) {
+	if (this->size() == 0) {
 		// i.e. 'first' insert in the tree
 		this->addToNode(new_key, new_value, temp);
 	} else {
@@ -874,7 +876,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 };
 
 template <typename K, typename V, typename CompareFn>
-K& BTreeNode<K, V, CompareFn>::findMedian() {
+K BTreeNode<K, V, CompareFn>::findMedian() {
 	typename std::list<K>::const_iterator key_iterator;
 
 	std::list<K> keyList;

@@ -36,57 +36,49 @@ public:
 		BufferFrame() : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
 		~BufferFrame() { free(data); }
 		void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
-		void pin() { is_pinned = true; };
-		void unpin() { is_pinned = false; };
-	};
-	
-	class BufferedFrameWriter
-	{
-	public:
-		static void memcpy(BufferFrame* frame, const void* src, size_t offset, size_t size)
+		void pin() { is_pinned = true; }
+		void unpin() { is_pinned = false; }
+
+		void memcpy(const void* src, size_t offset, size_t size)
 		{
-			frame->is_dirty = true;
-			std::memcpy(((char*)frame->data + offset), src, size);
+			is_dirty = true;
+			std::memcpy(((char*)data + offset), src, size);
 		}
 		
-		static void memset(BufferFrame* frame, char ch, size_t offset, size_t size)
+		void memset(char ch, size_t offset, size_t size)
 		{
-			frame->is_dirty = true;
-			std::memset(((char*)frame->data + offset), ch, size);
+			is_dirty = true;
+			std::memset(((char*)data + offset), ch, size);
 		}
 		
-		static void memmove(BufferFrame* frame, const void* src, size_t offset, size_t size)
+		void memmove(const void* src, size_t offset, size_t size)
 		{
-			frame->is_dirty = true;
-			std::memmove(((char*)frame->data + offset), src, size);
+			is_dirty = true;
+			std::memmove(((char*)data + offset), src, size);
 		}
 		
 		template <typename T>
-		static T write(BufferFrame* frame, size_t offset, const T& a)
+		T write(size_t offset, const T& a)
 		{
-			memcpy(frame, &a, offset, sizeof(a));
+			memcpy(&a, offset, sizeof(a));
 		}
-	};
-	
-	class BufferedFrameReader
-	{
-	public:
+
 		template <typename T>
-		static T read(BufferFrame* frame, size_t offset)
+		T read(size_t offset)
 		{
-			return *((T*)((char*)frame->data + offset));
+			return *((T*)((char*)data + offset));
 		}
 		
 		template <typename T>
-		static T* readPtr(BufferFrame* frame, size_t offset)
+		T* readPtr(size_t offset)
 		{
-			frame->is_dirty = true;
-			return ((T*)((char*)frame->data + offset));
+			is_dirty = true;
+			return ((T*)((char*)data + offset));
 		}
 		
-		static const void* readRawData(BufferFrame* frame, size_t offset)
+		const void* readRawData(size_t offset)
 		{
-			return (void*)((char*)frame->data + offset);
+			return (void*)((char*)data + offset);
 		}
 	};
 
@@ -210,7 +202,7 @@ BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved
 	header->block_number = 0;
 	pread(fd, header->data, block_size, getblockoffset(0));
 	
-	last_block_alloted = BufferedFrameReader::read<long>(header, 0);
+	last_block_alloted = header->read<long>(0);
 }
 
 BufferedFile::~BufferedFile()
@@ -272,7 +264,7 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 		//to be modularized yet
 		alloted->is_valid = true;		
 		alloted->block_number = block_number;
-		BufferedFrameWriter::memset(alloted, 0, 0, block_size);
+		alloted->memset(0, 0, block_size);
 		alloted->is_dirty = false;
 		pread(fd, alloted->data, block_size, getblockoffset(block_number));
 		
@@ -316,5 +308,3 @@ void BufferedFile::deleteBlock(long block_number) {
 }
 
 typedef BufferedFile::BufferFrame BufferFrame;
-typedef BufferedFile::BufferedFrameWriter BufferedFrameWriter;
-typedef BufferedFile::BufferedFrameReader BufferedFrameReader;

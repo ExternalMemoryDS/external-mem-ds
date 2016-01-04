@@ -181,7 +181,7 @@ BufferedFile::BufferFrame* BufferedFile::readHeader()
 }
 
 void BufferedFile::writeHeader()
-{
+{	
 	pwrite(fd, header->data, block_size, getblockoffset(0));
 	header->is_dirty = false;
 }
@@ -200,14 +200,14 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 		BufferFrame *alloted;
 		alloted = free_list_head->next;
 		
-		if(alloted->is_valid && alloted->is_dirty)
-		{
-			writeBlock(alloted->block_number);
-		}
-		
 		if(alloted->is_valid)
 		{
 			block_hash.erase(alloted->block_number);
+		}
+		
+		if(alloted->is_valid && alloted->is_dirty)
+		{
+			writeBlock(alloted->block_number);
 		}
 		
 		alloted->next->prev = free_list_head;

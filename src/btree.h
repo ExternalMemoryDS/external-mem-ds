@@ -55,6 +55,10 @@ const offset_t NULL_OFFSET = -1;
 
                                     Root Node
                                     ---------
+	Node-type indentifier           1 byte
+	Prev - block no                 sizeof(long)    ONLY IF LEAF NODE
+	Next - block no                 sizeof(long)	ONLY IF LEAF NODE
+	Parent node block no.           sizeof(long) 	zero/ minus 1
 	No of empty slots               sizeof(long)
 	M keys                          M * sizeof(K)
 	M + 1 pointers                  (M+1)*sizeof(long)  (i.e. block numbers)
@@ -95,8 +99,8 @@ protected:
 	std::list<K> keys;
 	CompareFn cmpl;
 	bool isChangedInMem;
+	blocknum_t parent_block_number;
 	BufferFrame* my_block;
-
 
 public:
 	BTreeNode(blocknum_t block_number, long M): block_number(block_number), M(M) {
@@ -508,7 +512,9 @@ V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 		next_block_num = head->findInNode(search_key);
 		if (next_block_num == NULL_BLOCK) return nullptr;
 
-		BTreeNode<K, V, CompareFn>* next_node = getNodeFromBlockNum(next_block_num);
+		BTreeNode<K, V, CompareFn>* next_node
+			= this->getNodeFromBlockNum(next_block_num);
+
 		head = next_node;
 	}
 
@@ -525,28 +531,6 @@ V& BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	// otherwise read the value from the block in data file and return
 	BufferFrame* buff = buffered_file_data->readBlock(valueAddr.block_number);
 	return BufferedFrameReader::readPtr<V>(buff, valueAddr.offset);
-};
-
-
-template <typename K, typename V, typename CompareFn>
-BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::getNodeFromBlockNum(blocknum_t block_number) {
-
-	BufferFrame* buff = buffered_file_internal->readBlock(block_number);
-	BTreeNode<K, V, CompareFn>* new_node = nullptr;
-
-	// read 1st byte from buff
-	bool isLeaf = BufferedFrameReader::read<bool>(buff, 0);
-
-	if (isLeaf) {
-		new_node = new TreeLeafNode<K, V, CompareFn>(block_number, M);
-		// read other properties from block and set them
-	} else {
-		new_node = new InternalNode<K, V, CompareFn>(block_number, M);
-		// read other properties from block and set them
-	}
-	new_node->my_block = buff;
-
-	return new_node;
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -633,15 +617,19 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 			// Set new_root to be the root of BTree
 			this->root = new_root;
+			this->root_block_num = new_root_bnum;
 
-			//TODO: UPDATE HEADER BLOCK ON DISK INDICATING NEW ROOT
+			// Updates the header block on disk file,
+			// to indicate the new root block no
+			this->buffered_file_internal->header->setRootBlockNo(
+				new_root_bnum
+			);
 
 			// make isRoot = false in old_root
 			old_root->isRoot = false;
 
 			// Split old root
 			trav = this->splitChild(old_root, new_root, new_key);
-			//TODO: WRITING TO DISK MAY BE REQUIRED (DEPENDS IF WRITING TO DISK IS )
 		}
 
 		BTreeNode<K, V, CompareFn>* next_node;
@@ -663,7 +651,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			} else {
 				next_block_num = trav->findInNode(new_key);
 				par = trav;
-				next_node = getNodeFromBlockNum(next_block_num);
+				next_node = this->getNodeFromBlockNum(next_block_num);
 
 				// destructor will automatically write it to the block
 				// plus our setter methods will mark a node's prop 'isChangedInMem'
@@ -673,19 +661,13 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 			trav = next_node;
 		}
 
-		// always called on a leaf node - returns a block-offset pair
-		valueAddr = trav->findInNode(new_key);
+		// here, trav is always a leaf node
 
-		// i.e. the key is not found
-		if (valueAddr.block_number == NULL_BLOCK
-			|| valueAddr.offset == NULL_OFFSET
-		) {
-			// key not present, so add the key and the value
-			this->addToNode(new_key, new_value, trav);
-		} else {
-			// key already exists, just update the value
-			trav->updateValue(new_key, new_value);
-		}
+
+		// if key not present, so add the key and the value
+		// if key already exists, adds another value
+		// with another key instance just next to previous one
+		this->addToNode(new_key, new_value, trav);
 
 		// destructor will automatically write it to the block
 		// plus our setter methods will mark a node's prop 'isChangedInMem'
@@ -832,9 +814,11 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	delete current_node;
 	delete child_to_split;
 
-	
-	if(!cmpl(*add_key, median_key) && !eq(*add_key, median_key)) return child_to_split;
-	else return new_node;
+	if (cmpl(median_key, add_key)) {
+		return child_to_split;
+	} else {
+		return new_node;
+	}
 };
 
 
@@ -859,8 +843,9 @@ void BTree<K, V, CompareFn>::addToNode(
 			break;
 		} else if (eq(*key_iter, new_key)) {
 
-			// CRITICAL: since we assume that if the key is equal, we search in the 'right' block
-			// same is followed in insertion
+			// CRITICAL: if the key is already present,
+			// add another key to its next slot
+			// thus allowing for duplicate keys
 			block_iter++;
 			break;
 		}
@@ -874,64 +859,70 @@ void BTree<K, V, CompareFn>::addToNode(
 
 };
 
-
 template <typename K, typename V, typename CompareFn>
-BTreeNode<K, V, CompareFn>& BTree<K, V, CompareFn>::getNodeFromBlockNum(blocknum_t block_number){
-	
-	//TODO: How to handle case of root?
+BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::getNodeFromBlockNum(
+	blocknum_t block_number
+) {
 
 	bool is_this_root;
-	BTreeNode<K, V, CompareFn> * new_node;
-	BufferFrame * buff_frame =  this->buffered_file_internal->readBlock(block_number);
-	node_t node_type_id = BufferedFrameReader::read<node_t>(buff_frame, 0);
+	BTreeNode<K, V, CompareFn>* new_node;
+	BufferFrame* buff_frame =  this->buffered_file_internal->readBlock(block_number);
+
+	offset_t curr_offset = 0;
+	node_t node_type_id = BufferedFrameReader::read<node_t>(buff_frame, curr_offset++);
 
 	long num_empty_slots;
 	long num_keys;
-	K* key_pointer;
+	K key_pointer;
+	blocknum_t parent_block_number;
 
-	if(this->root_block_num == block_number){
+	if(this->root_block_num == block_number) {
 		is_this_root = true;
 	} else {
 		is_this_root = false;
 	}
 
-	if(node_type_id){
+	if (node_type_id) {
 		// make a leaf node
-		num_empty_slots = BufferedFrameReader::read<node_t>(buff_frame, 1 + 3*sizeof(long));
+		parent_block_number = BufferedFrameReader::read<blocknum_t>(buff_frame, curr_offset);
+		curr_offset += sizeof(blocknum_t);
+
+		num_empty_slots = BufferedFrameReader::read<node_t>(buff_frame, curr_offset);
+		curr_offset += sizeof(node_t);
+
 		num_keys =  (this->M) - (num_empty_slots);
 
-		new_node = new TreeLeafNode<K, V, CompareFn>(block_number, M, is_this_root);
+		new_node = new TreeLeafNode<K, V, CompareFn>(block_number, this->M, is_this_root);
 
-		long keys_offset = 1+4*sizeof(long);
-		long next_block_addr = keys_offset + (this->M)*sizeof(K);
+		long keys_offset = curr_offset;
+		long next_block_addr = curr_offset + (this->M) * sizeof(K);
 
 		blocknum_t child_b_num;
 		offset_t child_offset_in_data_file;
 
-		blockOffsetPair *bo_pair = new blockOffsetPair();
+		blockOffsetPair bo_pair;
 
-		for(i = 0; i < num_keys; i++){
-			key_pointer = BufferedFrameReader::readPtr<K>(buff_frame, keys_offset);
-			this->keys.push_back(*key_pointer);
+		for (i = 0; i < num_keys; i++) {
+			key_pointer = BufferedFrameReader::read<K>(buff_frame, keys_offset);
+			this->keys.push_back(key_pointer);
 
 			child_b_num = BufferedFrameReader::read<blocknum_t>(buff_frame, next_block_addr);
-			child_offset_in_data_file = BufferedFrameReader::read<offset_t>(buff_frame, next_block_addr + sizeof(block_number_t));
+			child_offset_in_data_file = BufferedFrameReader::read<offset_t>(
+				buff_frame, next_block_addr + sizeof(block_number_t)
+			);
 
-			bo_pair->block_number = child_b_num;
-			bo_pair->offset = child_offset_in_data_file;
+			bo_pair.block_number = child_b_num;
+			bo_pair.offset = child_offset_in_data_file;
 
-			this->value_node_address.push_back(*bo_pair);
+			this->value_node_address.push_back(bo_pair);
 
 			keys_offset = keys_offset + sizeof(K);
 			next_block_addr = next_block_addr + sizeof(blocknum_t) + sizeof(offset_t);
 
 		}
-
-
 	} else {
 		// make an internal node
 		new_node = new InternalNode<K, V, CompareFn>(block_number, M, is_this_root);
-
 
 		num_empty_slots = BufferedFrameReader::read<node_t>(buff_frame, 1 + sizeof(long));
 		num_keys =  (this->M) - (num_empty_slots);
@@ -942,25 +933,63 @@ BTreeNode<K, V, CompareFn>& BTree<K, V, CompareFn>::getNodeFromBlockNum(blocknum
 		blocknum_t child_b_num;
 
 		for(i = 0; i < num_keys; i++){
-			
-			key_pointer = BufferedFrameReader::readPtr<K>(buff_frame, keys_offset);
-			this->keys.push_back(*key_pointer);
+
+			key_pointer = BufferedFrameReader::read<K>(buff_frame, keys_offset);
+			this->keys.push_back(key_pointer);
 
 			child_b_num = BufferedFrameReader::read<blocknum_t>(buff_frame, new_block_offset);
 			this->child_block_numbers.push_back(child_b_num);
 
 			keys_offset = keys_offset + sizeof(K);
-			next_block_addr = next_block_addr + sizeof(block_number_t); 
+			next_block_addr = next_block_addr + sizeof(block_number_t);
 		}
 
-		// get rightmost i.e M+1 st block number 
+		child_b_num = BufferedFrameReader::read<blocknum_t>(buff_frame, new_block_offset);
 		this->child_block_numbers.push_back(child_b_num);
 
-
+		// get rightmost i.e (M+1)st block number
+		this->child_block_numbers.push_back(child_b_num);
 	}
 
 	new_node->my_block = buff_frame;
+	new_node->setIsChangedInMem(false);
+	new_node->setIsRoot(is_this_root);
+
+	return new_node;
+};
 
 
-	return *new_node;
-}
+template <typename K, typename V, typename CompareFn>
+long BTree<K, V, CompareFn>::count(const K& search_key) {
+
+	BTreeNode<K, V, CompareFn>* trav = this->root, next_node;
+	blocknum_t next_block_num;
+	long count = 0;
+
+	while(trav && ! trav->isLeaf()) {
+		// always called on an internal node
+		next_block_num = head->findInNode(search_key);
+		if (next_block_num == NULL_BLOCK) return 0;
+
+		next_node
+			= this->getNodeFromBlockNum(next_block_num);
+		head = next_node;
+	}
+
+	if (trav && trav->isLeaf()) {
+		typename std::list<K>::const_iterator key_iter;
+		blockOffsetPair reqd_block;
+
+		for (
+			key_iter = trav->keys.begin();
+			key_iter != (trav->keys).end();
+			key_iter++, block_iter++
+		) {
+			if (eq(*key_iter, find_key)) {
+				count++;
+			}
+		}
+	}
+
+	return count;
+};

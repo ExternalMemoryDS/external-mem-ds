@@ -21,19 +21,23 @@ public:
 		friend class BufferedWriter;
 		friend class BufferedFile;
 		friend class BufferedReader;
+		friend class FramePool;
 	private:
 		bool is_valid;
 		bool is_dirty;
+		bool is_pinned;
 		long block_number;
 		void* data;
 		const BufferedFile* file_ref;
 		
 		BufferFrame *next, *prev;
 	public:
-		BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
-		BufferFrame() : is_valid(false), is_dirty(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
+		BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
+		BufferFrame() : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
 		~BufferFrame() { free(data); }
 		void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
+		void pin() { is_pinned = true; };
+		void unpin() { is_pinned = false; };
 	};
 	
 	class BufferedFrameWriter
@@ -131,7 +135,11 @@ public:
 		}
 		BufferFrame* getNewFrame()
 		{
-			return head->next;
+			BufferFrame* trav = head->next;
+			while(trav->is_pinned == true && trav != head)
+				trav = trav -> next;
+
+			return trav;
 		}
 		void doAccessUpdate(BufferFrame* ptr)
 		{
@@ -156,7 +164,7 @@ public:
 			ptr->block_number = -1;
 		}
 	};
-	
+
 private:
 	int fd;
 	const size_t block_size;

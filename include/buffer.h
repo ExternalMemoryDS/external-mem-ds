@@ -1,11 +1,5 @@
-#include <sys/stat.h>
 #include <sys/file.h>
-#include <fcntl.h>
 #include <unistd.h>
-#include <cstdio>
-#include <stddef.h>
-#include <stdint.h>
-#include <exception>
 #include <unordered_map>
 #include <cstring>
 
@@ -13,150 +7,14 @@
  * assuming one block header
  */
 
+class BufferedFile;
+class FramePool;
+class BufferFrame;
+
 class BufferedFile
 {
-	
-public:
-	class BufferFrame {
-		friend class BufferedWriter;
-		friend class BufferedFile;
-		friend class BufferedReader;
-		friend class FramePool;
-	private:
-		bool is_valid;
-		bool is_dirty;
-		bool is_pinned;
-		long block_number;
-		void* data;
-		const BufferedFile* file_ref;
-		
-		BufferFrame *next, *prev;
-	public:
-		BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
-		BufferFrame() : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
-		~BufferFrame() { free(data); }
-		void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
-		void pin() { is_pinned = true; }
-		void unpin() { is_pinned = false; }
-
-		void memcpy(const void* src, size_t offset, size_t size)
-		{
-			is_dirty = true;
-			std::memcpy(((char*)data + offset), src, size);
-		}
-		
-		void memset(char ch, size_t offset, size_t size)
-		{
-			is_dirty = true;
-			std::memset(((char*)data + offset), ch, size);
-		}
-		
-		void memmove(const void* src, size_t offset, size_t size)
-		{
-			is_dirty = true;
-			std::memmove(((char*)data + offset), src, size);
-		}
-		
-		template <typename T>
-		T write(size_t offset, const T& a)
-		{
-			memcpy(&a, offset, sizeof(a));
-		}
-
-		template <typename T>
-		T read(size_t offset)
-		{
-			return *((T*)((char*)data + offset));
-		}
-		
-		template <typename T>
-		T* readPtr(size_t offset)
-		{
-			is_dirty = true;
-			return ((T*)((char*)data + offset));
-		}
-		
-		const void* readRawData(size_t offset)
-		{
-			return (void*)((char*)data + offset);
-		}
-	};
-
-	class FramePool
-	{
-		const int pool_size;
-		BufferFrame* dllist;
-		BufferFrame* head;
-
-	public:
-		FramePool(const BufferedFile* file, int buffer_pool_size) : pool_size(buffer_pool_size)
-		{
-			dllist = new BufferFrame[pool_size]();
-			for(int i=0; i<pool_size; i++)
-				dllist[i].setBufferedFile(file);
-			head = new BufferFrame(file);
-
-			head->next = dllist;
-			head->prev = (dllist + pool_size - 1);
-			dllist[0].next = (dllist+1);
-			dllist[0].prev = head;
-			dllist[pool_size-1].next = head;
-			dllist[pool_size-1].prev = dllist+pool_size-2;
-
-			for(auto i=1; i< pool_size-1; i++)
-			{
-				dllist[i].next = (dllist + i + 1);
-				dllist[i].prev = (dllist + i - 1);
-			}
-		}
-		~FramePool()
-		{
-			for(auto i=0; i < pool_size; i++)
-			{
-				if(dllist[i].is_dirty)
-				{
-					pwrite(dllist[i].file_ref->fd, dllist[i].data, dllist[i].file_ref->block_size, dllist[i].file_ref->getblockoffset(dllist[i].block_number));
-				}
-			}
-			delete [] dllist;
-			delete head;
-		}
-		BufferFrame* getHead()
-		{
-			return head;
-		}
-		BufferFrame* getNewFrame()
-		{
-			BufferFrame* trav = head->next;
-			while(trav->is_pinned == true && trav != head)
-				trav = trav -> next;
-
-			return trav;
-		}
-		void doAccessUpdate(BufferFrame* ptr)
-		{
-			ptr->next->prev = ptr->prev;
-			ptr->prev->next = ptr->next;
-			ptr->next = head;
-			ptr->prev = head->prev;
-			head->prev->next = ptr;
-			head->prev = ptr;
-		}
-		void removeFrame(BufferFrame* ptr)
-		{
-			ptr->next->prev = ptr->prev;
-			ptr->prev->next = ptr->next;
-			ptr->next = head->next;
-			ptr->prev = head;
-			head->next->prev = ptr;
-			head->next = ptr;
-
-			ptr->is_valid = false;
-			ptr->is_dirty = false;
-			ptr->block_number = -1;
-		}
-	};
-
+	friend class BufferFrame;
+	friend class FramePool;
 private:
 	int fd;
 	const size_t block_size;
@@ -183,6 +41,160 @@ public:
 	long allotBlock();
 	void deleteBlock(long block_number);
 };
+
+class BufferFrame {
+	friend class BufferedFile;
+	friend class FramePool;
+private:
+	bool is_valid;
+	bool is_dirty;
+	bool is_pinned;
+	long block_number;
+	void* data;
+	const BufferedFile* file_ref;
+	
+	BufferFrame *next, *prev;
+public:
+	BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
+	BufferFrame() : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
+	~BufferFrame() { free(data); }
+	void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
+	void pin() { is_pinned = true; }
+	void unpin() { is_pinned = false; }
+	void memcpy(const void* src, size_t offset, size_t size);
+	void memset(char ch, size_t offset, size_t size);
+	void memmove(const void* src, size_t offset, size_t size);
+	template <typename T> T write(size_t offset, const T& a);
+	template <typename T> T read(size_t offset);
+	template <typename T> T* readPtr(size_t offset);
+	const void* readRawData(size_t offset);
+};
+
+class FramePool
+{
+	friend class BufferedFile;
+private:
+	const int pool_size;
+	BufferFrame* dllist;
+	BufferFrame* head;
+
+public:
+	FramePool(const BufferedFile* file, int buffer_pool_size);
+	~FramePool();
+	BufferFrame* getHead();
+	BufferFrame* getNewFrame();
+	void doAccessUpdate(BufferFrame* ptr);
+	void removeFrame(BufferFrame* ptr);
+};
+
+void BufferFrame::memcpy(const void* src, size_t offset, size_t size)
+{
+	is_dirty = true;
+	std::memcpy(((char*)data + offset), src, size);
+}
+
+void BufferFrame::memset(char ch, size_t offset, size_t size)
+{
+	is_dirty = true;
+	std::memset(((char*)data + offset), ch, size);
+}
+
+void BufferFrame::memmove(const void* src, size_t offset, size_t size)
+{
+	is_dirty = true;
+	std::memmove(((char*)data + offset), src, size);
+}
+
+template <typename T>
+T BufferFrame::write(size_t offset, const T& a)
+{
+	memcpy(&a, offset, sizeof(a));
+}
+
+template <typename T>
+T BufferFrame::read(size_t offset)
+{
+	return *((T*)((char*)data + offset));
+}
+
+template <typename T>
+T* BufferFrame::readPtr(size_t offset)
+{
+	is_dirty = true;
+	return ((T*)((char*)data + offset));
+}
+
+const void* BufferFrame::readRawData(size_t offset)
+{
+	return (void*)((char*)data + offset);
+}
+
+FramePool::FramePool(const BufferedFile* file, int buffer_pool_size) : pool_size(buffer_pool_size)
+{
+	dllist = new BufferFrame[pool_size]();
+	for(int i=0; i<pool_size; i++)
+		dllist[i].setBufferedFile(file);
+	head = new BufferFrame(file);
+
+	head->next = dllist;
+	head->prev = (dllist + pool_size - 1);
+	dllist[0].next = (dllist+1);
+	dllist[0].prev = head;
+	dllist[pool_size-1].next = head;
+	dllist[pool_size-1].prev = dllist+pool_size-2;
+
+	for(auto i=1; i< pool_size-1; i++)
+	{
+		dllist[i].next = (dllist + i + 1);
+		dllist[i].prev = (dllist + i - 1);
+	}
+}
+FramePool::~FramePool()
+{
+	for(auto i=0; i < pool_size; i++)
+	{
+		if(dllist[i].is_dirty)
+		{
+			pwrite(dllist[i].file_ref->fd, dllist[i].data, dllist[i].file_ref->block_size, dllist[i].file_ref->getblockoffset(dllist[i].block_number));
+		}
+	}
+	delete [] dllist;
+	delete head;
+}
+BufferFrame* FramePool::getHead()
+{
+	return head;
+}
+BufferFrame* FramePool::getNewFrame()
+{
+	BufferFrame* trav = head->next;
+	while(trav->is_pinned == true && trav != head)
+		trav = trav -> next;
+
+	return trav;
+}
+void FramePool::doAccessUpdate(BufferFrame* ptr)
+{
+	ptr->next->prev = ptr->prev;
+	ptr->prev->next = ptr->next;
+	ptr->next = head;
+	ptr->prev = head->prev;
+	head->prev->next = ptr;
+	head->prev = ptr;
+}
+void FramePool::removeFrame(BufferFrame* ptr)
+{
+	ptr->next->prev = ptr->prev;
+	ptr->prev->next = ptr->next;
+	ptr->next = head->next;
+	ptr->prev = head;
+	head->next->prev = ptr;
+	head->next = ptr;
+
+	ptr->is_valid = false;
+	ptr->is_dirty = false;
+	ptr->block_number = -1;
+}
 
 BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved_memory) :
 						block_size(blksize), buffer_pool_size(reserved_memory/blksize), last_block_alloted(0)
@@ -223,7 +235,7 @@ BufferedFile::~BufferedFile()
 	delete header;
 }
 
-BufferedFile::BufferFrame* BufferedFile::readHeader()
+BufferFrame* BufferedFile::readHeader()
 {
 	return header;
 }
@@ -240,8 +252,7 @@ long BufferedFile::allotBlock()
 	return last_block_alloted;
 }
 
-//incomplete modularization
-BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
+BufferFrame* BufferedFile::readBlock(long block_number)
 {
 	std::unordered_map<long, BufferFrame*>::iterator got = block_hash.find(block_number);
 	if(got == block_hash.end())
@@ -261,7 +272,6 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 
 		frame_pool->doAccessUpdate(alloted);
 		
-		//to be modularized yet
 		alloted->is_valid = true;		
 		alloted->block_number = block_number;
 		alloted->memset(0, 0, block_size);
@@ -279,7 +289,6 @@ BufferedFile::BufferFrame* BufferedFile::readBlock(long block_number)
 	}
 }
 
-//inclomplete modularization updates
 void BufferedFile::writeBlock(long block_number)
 {
 	if(block_number > last_block_alloted)
@@ -293,7 +302,6 @@ void BufferedFile::writeBlock(long block_number)
 	}
 }
 
-//verify removeFrame operation
 void BufferedFile::deleteBlock(long block_number) {
 	if(block_number == 0)
 		return;
@@ -306,5 +314,3 @@ void BufferedFile::deleteBlock(long block_number) {
 	
 	return;
 }
-
-typedef BufferedFile::BufferFrame BufferFrame;

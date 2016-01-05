@@ -4,8 +4,6 @@
 #include <list>
 #include <cstring>
 
-using namespace	std;
-
 //Type Definitions
 typedef long blocknum_t;
 typedef long offset_t;

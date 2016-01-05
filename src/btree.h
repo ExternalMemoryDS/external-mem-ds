@@ -762,7 +762,7 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 
 	std::list<K> keyList;
 	std::list<blockOffsetPair> blockPairList;
-	this->getKeys(keyList); this->getBlockNumbers(blockPairList);
+	this->getKeys(keyList); this->getBlockOffsetPairs(blockPairList);
 
 	for (
 		key_iter = keyList.begin(), block_iter = blockPairList.begin();

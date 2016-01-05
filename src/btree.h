@@ -762,7 +762,7 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 
 	std::list<K> keyList;
 	std::list<blockOffsetPair> blockPairList;
-	this->getKeys(keyList); this->getBlockNumbers(blockPairList);
+	this->getKeys(keyList); this->getBlockOffsetPairs(blockPairList);
 
 	for (
 		key_iter = keyList.begin(), block_iter = blockPairList.begin();
@@ -1178,3 +1178,185 @@ long BTree<K, V, CompareFn>::count(const K& find_key) {
 
 	return count;
 };
+
+/*
+
+	DELETION:
+	(DO NOT WRITE OTHER METHODS TILL "DELETION ENDS" COMMENT)
+
+	convention:
+	C1: if a key is removed it must be removed from both internal and external node
+*/
+
+template <typename K, typename V, typename CompareFn>
+void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
+
+	std::list<K> key_list;
+	std::list<blockOffsetPair> block_pair_list;
+	BTreeNode<K, V, CompareFn>* trav, next_node;
+	BTreeNode<K, V, CompareFn>* left_sib_of_next_node, right_sib_of_next_node, temp;
+
+	trav = this->getNodeFromBlockNum(
+		this->getRootBlockNo()
+	);
+
+	bool contains_key;
+	blocknum_t next_block_num;
+
+	if (trav->isLeaf()) {
+		// root node is a leaf
+		removeKey(remove_key);
+		return;
+	}
+
+
+	while (trav && ! trav->isLeaf())) {
+		// method implemented below
+		contains_key = trav->containsKey(remove_key, next_block_num);
+		if (contains_key) {
+			temp = trav;
+			// need to replace remove_key with least key in right subtree of temp to satisfy c1 convention
+		}
+		next_node = this->getNodeFromBlockNum(next_block_num);
+
+		if (next_node->isLeaf()) {
+			next_node->removeKey(K);
+			next_node->getKeys(key_list);
+			if (key_list.size() < MIN_KEYS) {
+				//BORROW FROM LEFT CHILD IN trav if such exists
+				//NOTE: if next_node if the first child of trav, then we MUST use right node
+				if () {
+					// if left sibling has > MIN_KEYS
+				} else if () {
+					//NOTE: cant use this condition if next_node is the right most child of trav
+					// if right sibling has > MIN_KEYS
+
+				} else {
+					// MERGE:
+					// if left sibling doesnt exist, merge with right sibling
+					// if right sibling doesnt exist, merge with left sibling
+					// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
+				}
+
+			}
+			break;
+		} else {
+			trav = next_node;
+		}
+	}
+
+	if (temp != nullptr) {
+		K replacement_key = //least key in right subtree of trav
+		temp->replaceKey(remove_key, replacement_key);
+	}
+}
+
+// finds next_block_number and returns true if remove_key is present in this node
+template <typename K, typename V, typename CompareFn>
+bool InternalNode<K,V,CompareFn>::containsKey(const K& key, blockmum_t& next_block_number){
+
+	std::list<K> keyList;
+	std::list<blocknum_t> blockList;
+	this->getKeys(keyList); this->getBlockNumbers(blockList);
+
+	typename std::list<K>::iterator key_iter;
+	typename std::list<blocknum_t>::iterator block_iter;
+
+
+	for (
+		key_iter = keyList.begin(), block_iter = blockList.begin();
+		key_iter != keyList.end();
+		key_iter++, block_iter++
+	) {
+		if (cmpl(*key_iter, find_key)) {
+			 next_block_number = *block_iter;
+			 return false;
+		} else if (eq(*key_iter, find_key)) {
+
+			// CRITICAL: since we assume that if the key is equal, we search in the 'right' block
+			// same is followed in insertion
+			block_iter++;
+			next_block_number = *block_iter;
+			return true;
+		}
+	}
+
+	next_block_number = *block_iter;
+	return false;
+}
+
+
+//replaceKey
+template <typename K, typename V, typename CompareFn>
+bool InternalNode<K,V,CompareFn>::replaceKey(const K& key, blockmum_t next_block_number){
+	std::list<K> key_list;
+	std::list<blockOffsetPair> block_pair_list;
+
+	this->getKeys(key_list); this->getBlockNumbers(block_pair_list);
+
+	typename std::list<K>::iterator key_iter;
+	typename std::list<blockOffsetPair>::iterator block_iter;
+
+	for (
+		key_iter = key_list.begin(), block_iter = block_pair_list.begin();
+		old_key_iter != (key_list).end();
+		// no increment, read comments below
+	) {
+		if (eq(*key_iter, *remove_key){
+			key_iter = key_list.erase(old_key_iter);
+			key_list.insert(key_iter, replacement_key);
+			break;
+		} else if (cmpl(*key_iter, *remove_key)) {
+			// if key > removeKey
+			break;
+		} else {
+			//if key < remove_key
+			key_iter++;
+			block_iter++;
+		}
+	}
+
+	//TODO: if this is done then we store the node even if num_keys < min_threshold, we may need to change this later
+	this->setKeys(key_list);
+	this->setBlockOffsetPairs(block_pair_list);
+}
+
+
+// For now assuming this a method of TreeLeafNode
+template <typename K, typename V, typename CompareFn>
+void TreeLeafNode<K, V, CompareFn>::removeKey(const K& remove_key){
+	// remove all instances of key K including duplicates
+	std::list<K> key_list;
+	std::list<blockOffsetPair> block_pair_list;
+
+	this->getKeys(key_list); this->getBlockNumbers(block_pair_list);
+
+	typename std::list<K>::iterator key_iter;
+	typename std::list<blockOffsetPair>::iterator block_iter;
+
+	for (
+		key_iter = key_list.begin(), block_iter = block_pair_list.begin();
+		old_key_iter != (key_list).end(); 
+		// no increment, read comments below
+	) {
+		if (eq(*key_iter, remove_key) {
+			key_iter = key_list.erase(old_key_iter);
+			block_iter = block_pair_list.erase(old_block_iter);
+		} else if (cmpl(*key_iter, remove_key)) {
+			// if key > removeKey
+			break;
+		} else {
+			//if key < remove_key
+			key_iter++;
+			block_iter++;
+		}
+	}
+
+	//TODO: if this is done then we store the node even if num_keys < min_threshold, we may need to change this later
+	this->setKeys(key_list);
+	this->setBlockOffsetPairs(block_pair_list);
+}
+
+/*
+	DELETETION ENDS
+*/

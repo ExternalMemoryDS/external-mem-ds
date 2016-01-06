@@ -1193,7 +1193,8 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 
 	std::list<K> key_list;
 	std::list<blockOffsetPair> block_pair_list;
-	BTreeNode<K, V, CompareFn>* trav, next_node, left_sib_of_next_node, right_sib_of_next_node, temp = nullptr;
+	BTreeNode<K, V, CompareFn>* trav, next_node, temp = nullptr;
+	K replacement_key
 
 	trav = this->getNodeFromBlockNum(
 		this->getRootBlockNo()
@@ -1220,38 +1221,103 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 
 		if (next_node->isLeaf()) {
 			next_node->removeKey(K);
-			next_node->getKeys(key_list);
-			if (key_list.size() < MIN_KEYS) {
+			this->adjustLeaf(trav, next_node);
+
+			if (temp != nullptr) {
+				std::list<blocknum_t> block_list;
+				std::list<K> child_keys;
+				blocnum_t least = trav->getBlockNumbers(block_list);
+
+				BTreeNode<K, V, CompareFn> * first_child = getNodeFromBlockNum(least);
+				first_child->getKeys(child_keys);
+
+				//TODO: make this a const call
+				replacement_key = child_keys.front();
+				temp->replaceKey(remove_key, replacement_key);
+				delete temp;
+			}
+
+			break;
+		} else {
+			this->adjustInternal();
+		}
+	
+	}
+}
+
+template <typename K, typename V, typename CompareFn>
+void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
+
+	BTreeNode<K, V, CompareFn>* sibling;
+	std::list<K> parent_key_list node_key_list;
+	parent->getKeys(parent_key_list);
+	next_node->getKeys(node_key_list);
+	// TODO: WIll this case be required?
+	
+
+
+	if (key_list.size() < MIN_KEYS) {
 				//BORROW FROM LEFT CHILD IN trav if such exists
 				//NOTE: if next_node if the first child of trav, then we MUST use right node
-				if () {
+		if () {
 					// if left sibling has > MIN_KEYS
-				} else if () {
+		} else if () {
 					//NOTE: cant use this condition if next_node is the right most child of trav
 					// if right sibling has > MIN_KEYS
 
-				} else {
+		} else {
+
+				// MERGE:
+			if(parent->isRoot() && parent_key_list.size() < 2){
+				// if parent is the only internal Node and there are only two nodes merge them to form one leaf node and update root block number in header
+
+			} else{
+				// if left sibling doesnt exist, merge with right sibling
+					// if right sibling doesnt exist, merge with left sibling
+					// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
+			}
+					
+		}
+
+	}
+}
+
+template <typename K, typename V, typename CompareFn>
+void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
+	BTreeNode<K, V, CompareFn>* sibling;
+	std::list<K> parent_key_list, node_key_list;
+
+	parent->getKeys(parent_key_list);
+	node_to_adjust->getKeys(node_key_list);
+	pare
+
+	if( parent->isRoot() && (parent_key_list.getSize() < 2) ){
+		// If parent has only one key, then merge parent and both its children into one node
+	} else {
+
+		if(key_list.size() < MIN_KEYS - 1){
+				//borrow from left child
+			if () {
+					// if left sibling has > MIN_KEYS
+			} else if () {
+					//NOTE: cant use this condition if next_node is the right most child of trav
+					// if right sibling has > MIN_KEYS
+
+			} else {
 					// MERGE:
 					// if left sibling doesnt exist, merge with right sibling
 					// if right sibling doesnt exist, merge with left sibling
 					// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
-				}
-
 			}
-			break;
-		} else {
-			trav = next_node;
+
 		}
-	}
-
-	if (temp != nullptr) {
-		K replacement_key = //least key in right subtree of trav
-		temp->replaceKey(remove_key, replacement_key);
 
 
-		delete temp;
 	}
 }
+
+
+
 
 // finds next_block_number and returns true if remove_key is present in this node
 template <typename K, typename V, typename CompareFn>
@@ -1322,7 +1388,6 @@ bool InternalNode<K,V,CompareFn>::replaceKey(const K& key, blockmum_t next_block
 	this->setKeys(key_list);
 	this->setBlockOffsetPairs(block_list);
 }
-
 
 // For now assuming this a method of TreeLeafNode
 template <typename K, typename V, typename CompareFn>

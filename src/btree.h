@@ -1226,7 +1226,7 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 			if (temp != nullptr) {
 				std::list<blocknum_t> block_list;
 				std::list<K> child_keys;
-				blocnum_t least = trav->getBlockNumbers(block_list);
+				blocknum_t least = trav->getBlockNumbers(block_list);
 
 				BTreeNode<K, V, CompareFn> * first_child = getNodeFromBlockNum(least);
 				first_child->getKeys(child_keys);
@@ -1256,11 +1256,14 @@ template <typename K, typename V, typename CompareFn>
 void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
 
 	BTreeNode<K, V, CompareFn>* sibling;
-	std::list<K> parent_key_list node_key_list;
+	std::list<K> parent_key_list node_key_list, left_sib_key_list, right_sib_key_list;
+	std::list<blockOffsetPair> parent_block_list, node_block_list, left_sib_block_list, right_sib_block_list;
 	parent->getKeys(parent_key_list);
 	next_node->getKeys(node_key_list);	
 
-	blocknum_t node_block_num;
+
+	K old_key;
+	blocknum_t node_block_num = node_to_adjust->getBlockNo();
 
 	parent->getKeys(parent_key_list);
 	node_to_adjust->getKeys(node_key_list);
@@ -1279,14 +1282,69 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 				//BORROW FROM LEFT CHILD IN trav if such exists
 				//NOTE: if next_node if the first child of trav, then we MUST use right node
 
+
+		//TODO: check wherever old_key is set!
+
+
 		if ( left_sibling != nullptr && left_sibling->getSize() > MIN_KEYS) {
 					// if left sibling has > MIN_KEYS
+			node_key_iter = node_key_list.begin();
+			node_block_iter = node_block_list.begin();
+
+			
+			left_sibling->getKeys(left_sib_key_list);
+			left_sibling->getBlockOffsetPairs(left_sib_block_list);
+
+			//need to know old_key
+			old_key = ;
+			left_sib_key_iter = left_sib_key_list.end();
+			left_sib_block_iter = left_sib_block_list.end();
+			left_sib_key_iter--;
+			left_sib_block_iter--;
+
+			node_key_list.insert(node_key_iter, *left_sib_key_iter);
+			node_block_list.insert(node_block_iter, *left_sib_block_iter);
+			
+			node_to_adjust->setKeys(node_key_list);
+			node_to_adjust->setBlockOffsetPairs(node_block_list);
+
+			parent->replaceKey( old_key, *left_sib_key_iter);
+
+			left_sib_key_iter = left_sib_key_list.erase(left_sib_key_iter);
+			left_sib_block_iter = left_sib_block_list.erase(left_sib_block_iter);
+
+			left_sibling->setKeys(left_sib_key_list);
+			left_sibling->setBlockOffsetPairs(left_sib_block_list);
+
+
 		} else if ( right_sibling != nullptr && right_sibling->getSize() > MIN_KEYS) {
 					//NOTE: cant use this condition if next_node is the right most child of trav
 					// if right sibling has > MIN_KEYS
 
-		} else {
+			//assumes that key in parent is same as first key in right child
+			right_sibling->getKeys(right_sib_key_list);
+			right_sibling->getBlockOffsetPairs(right_sib_block_list);
 
+
+			right_sib_key_iter = right_sib_key_list.begin();
+			right_sib_block_iter = right_sib_block_list.begin();
+			old_key = ;
+
+			node_key_list.push_back(*right_sib_key_iter);
+			node_block_list.push_back(*right_sib_block_iter);
+
+			node_to_adjust->setKeys(node_key_list);
+			node_to_adjust->setBlockOffsetPairs(node_block_list);
+
+			right_sib_key_iter = right_sib_key_list.erase(right_sib_key_iter);
+			right_sib_block_iter = right_sib_block_list.erase(right_sib_block_iter);
+
+			parent->replaceKey(old_key, *right_sib_key_iter);
+
+			right_sibling->setKeys(right_sib_key_list);
+			right_sibling->setBlockOffsetPairs(right_sib_block_list);
+
+		} else {
 				// MERGE:
 			if(parent->isRoot() && parent_key_list.size() < 2){
 				// If parent is root and has only one key, then merge parent and both its children into one node, update root block number in 
@@ -1307,10 +1365,24 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 template <typename K, typename V, typename CompareFn>
 void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
 	BTreeNode<K, V, CompareFn>* left_sibling = nullptr, right_sibling = nullptr;
-	std::list<K> parent_key_list, node_key_list;
-	std::list<blocknum_t> parent_blocks;
 
-	blocknum_t node_block_num;
+	//key lists
+	std::list<K> parent_key_list, node_key_list, left_sib_key_list, right_sib_key_list;
+	//block lists
+	std::list<blocknum_t> parent_block_list, node_block_list, left_sib_block_list, right_sib_block_list;
+
+	//key iters
+	typename std::list<K>::iterator parent_key_iter, node_key_iter, left_sib_key_iter, right_sib_key_iter;
+
+	//block iters
+	typename std::list<blockOffsetPair>::iterator parent_block_iter, node_block_iter, left_sib_block_iter, right_sib_block_iter;
+
+
+	K replacement_key;
+	blocknum_t replacement_block;
+	
+
+	blocknum_t node_block_num = node_to_adjust->getBlockNo();
 
 	parent->getKeys(parent_key_list);
 	node_to_adjust->getKeys(node_key_list);
@@ -1321,20 +1393,59 @@ void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BT
 
 
 		if(parent_block_list.front() != node_block_num){
-			// find left sibling
+			// make left sibling
 			left_sibling  = this->getNodeFromBlockNum(node_to_adjust->getPrevBlockNo());
 		}
 
 		if(parent_block_list.back() != node_block_num){
+			//make right sibling
 			right_sibling = this->getNodeFromBlockNum(node_to_adjust->getNextBlockNo());
 		}
+
+
+
 		//borrow from left child
 		if ( left_sibling != nullptr &&  left_sibling->getSize() > MIN_KEYS) {
-				// if left sibling has > MIN_KEYS
+			// if left sibling has > MIN_KEYS
+
+			// remove last key from left sibling and add it to this_node sibling
+			node_key_iter = node_key_list.begin();
+			node_key_iter = node_key_list.begin();
+			left_sib_key_iter = left_sib_key_list.end();
+			left_sib_key_iter--;
+			replacement_key = *left_sib_key_iter;
+
+
+
+			// replace key in parent with proper key
 
 		} else if ( right_sibling != nullptr && right_sibling->getSize() > MIN_KEYS ) {
 				//NOTE: cant use this condition if next_node is the right most child of trav
 				// if right sibling has > MIN_KEYS
+			right_sibling->getKeys(right_sib_key_list);
+			right_sibling->getBlockNumbers(right_sib_block_list);	
+
+			right_sib_key_iter = right_sib_key_list.begin();
+			right_sib_block_list = right_sib_block_list.begin();
+
+			BTreeNode<K, V, CompareFn> * grand_child = this->getNodeFromBlockNum(*right_sib_block_list);
+
+			node_key_list.push_back(grand_child->getSmallestKey());
+			node_block_list.push_back(*right_sib_block_iter);
+
+			old_key = ;
+
+			node_to_adjust->setKeys(node_key_list);
+			node_to_adjust->setBlockNumbers(node_block_list);
+
+			right_sib_key_iter = right_sib_key_list.erase(right_sib_key_iter);
+			right_sib_block_iter = right_sib_block_list.erase(right_sib_block_iter);
+
+			right_sibling->setKeys(right_sib_key_list);
+			right_sibling->setBlockNumbers(right_sib_block_list);
+
+			parent->replaceKey(old_key, *right_sib_block_iter);
+
 
 		} else {
 
@@ -1357,7 +1468,15 @@ void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BT
 	}
 }
 
+template <typename K, typename V, typename CompareFn>
+K BTreeNode<K, V, CompareFn>::getSmallestKey(){
+	std::list<K> key_list;
 
+	this->getKeys(key_list);
+
+	typename std::list<K>::const_iterator key_iter = key_list.begin();
+	return *key_iter;
+}
 
 
 // finds next_block_number and returns true if remove_key is present in this node

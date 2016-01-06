@@ -1239,10 +1239,15 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 
 			break;
 		} else {
-			this->adjustInternal();
+			this->adjustInternal(trav, next_node);
+			// restart delete from current trav
+			continue;
 		}
 	
 	}
+
+	// reduce sz
+	this->sz--;
 }
 
 template <typename K, typename V, typename CompareFn>
@@ -1251,14 +1256,13 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 	BTreeNode<K, V, CompareFn>* sibling;
 	std::list<K> parent_key_list node_key_list;
 	parent->getKeys(parent_key_list);
-	next_node->getKeys(node_key_list);
-	// TODO: WIll this case be required?
-	
+	next_node->getKeys(node_key_list);	
 
 
 	if (key_list.size() < MIN_KEYS) {
 				//BORROW FROM LEFT CHILD IN trav if such exists
 				//NOTE: if next_node if the first child of trav, then we MUST use right node
+
 		if () {
 					// if left sibling has > MIN_KEYS
 		} else if () {
@@ -1284,34 +1288,53 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 
 template <typename K, typename V, typename CompareFn>
 void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
-	BTreeNode<K, V, CompareFn>* sibling;
+	BTreeNode<K, V, CompareFn>* left_sibling = nullptr, right_sibling = nullptr;
 	std::list<K> parent_key_list, node_key_list;
+	std::list<blocknum_t> parent_blocks;
+
+	blocknum_t node_block_num;
 
 	parent->getKeys(parent_key_list);
 	node_to_adjust->getKeys(node_key_list);
-	pare
 
-	if( parent->isRoot() && (parent_key_list.getSize() < 2) ){
-		// If parent has only one key, then merge parent and both its children into one node
-	} else {
+	//bool left_most_child, right_most_child;
 
-		if(key_list.size() < MIN_KEYS - 1){
-				//borrow from left child
-			if () {
-					// if left sibling has > MIN_KEYS
-			} else if () {
-					//NOTE: cant use this condition if next_node is the right most child of trav
-					// if right sibling has > MIN_KEYS
+	if(key_list.size() < MIN_KEYS - 1){
 
-			} else {
-					// MERGE:
-					// if left sibling doesnt exist, merge with right sibling
-					// if right sibling doesnt exist, merge with left sibling
-					// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
-			}
 
+		if(parent_block_list.front() != node_block_num){
+			// find left sibling
+			left_sibling  = 
 		}
 
+		if(parent_block_list.back() != node_block_num){
+			right_sibling = 
+		}
+		//borrow from left child
+		if ( left_sibling != nullptr &&  left_sibling->getSize() > MIN_KEYS) {
+				// if left sibling has > MIN_KEYS
+
+		} else if ( right_sibling != nullptr && right_sibling->getSize() > MIN_KEYS ) {
+				//NOTE: cant use this condition if next_node is the right most child of trav
+				// if right sibling has > MIN_KEYS
+
+		} else {
+
+			if( parent->isRoot() && (parent->getSize() < 2) ){
+				// If parent has only one key, then merge parent and both its children into one node
+
+
+			} else {
+
+
+				// MERGE (NON-SPECIAL):
+				// if left sibling doesnt exist, merge with right sibling
+				// if right sibling doesnt exist, merge with left sibling
+				// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
+
+			}
+				
+		}
 
 	}
 }

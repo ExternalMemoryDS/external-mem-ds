@@ -1250,6 +1250,8 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 	this->sz--;
 }
 
+// NOTE: adjustLeaf and adjustInternal can be made into one method by adding if(leaf){} else{}
+// if next_node (i.e node_to_adjust) is a leaf node
 template <typename K, typename V, typename CompareFn>
 void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
 
@@ -1258,14 +1260,28 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 	parent->getKeys(parent_key_list);
 	next_node->getKeys(node_key_list);	
 
+	blocknum_t node_block_num;
+
+	parent->getKeys(parent_key_list);
+	node_to_adjust->getKeys(node_key_list);
 
 	if (key_list.size() < MIN_KEYS) {
+
+		if(parent_block_list.front() != node_block_num){
+			// find left sibling
+			left_sibling  = this->getNodeFromBlockNum(node_to_adjust->getPrevBlockNo());
+		}
+
+		if(parent_block_list.back() != node_block_num){
+			right_sibling = this->getNodeFromBlockNum(node_to_adjust->getNextBlockNo());
+		}
+
 				//BORROW FROM LEFT CHILD IN trav if such exists
 				//NOTE: if next_node if the first child of trav, then we MUST use right node
 
-		if () {
+		if ( left_sibling != nullptr && left_sibling->getSize() > MIN_KEYS) {
 					// if left sibling has > MIN_KEYS
-		} else if () {
+		} else if ( right_sibling != nullptr && right_sibling->getSize() > MIN_KEYS) {
 					//NOTE: cant use this condition if next_node is the right most child of trav
 					// if right sibling has > MIN_KEYS
 
@@ -1273,12 +1289,13 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 
 				// MERGE:
 			if(parent->isRoot() && parent_key_list.size() < 2){
+				// If parent is root and has only one key, then merge parent and both its children into one node, update root block number in 
+			} else {
+				//  MERGE: NON-SPECIAL
 				// if parent is the only internal Node and there are only two nodes merge them to form one leaf node and update root block number in header
-
-			} else{
 				// if left sibling doesnt exist, merge with right sibling
-					// if right sibling doesnt exist, merge with left sibling
-					// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
+				// if right sibling doesnt exist, merge with left sibling
+				// if both exist and both have < MIN_KEYS: is such a state possible in out algo???????
 			}
 					
 		}
@@ -1286,6 +1303,7 @@ void BTree<K,V,CompareFn>::adjustLeaf(BTreeNode<K, V, CompareFn>* parent, BTreeN
 	}
 }
 
+// if next_node (i.e node_to_adjust) is an internal node
 template <typename K, typename V, typename CompareFn>
 void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust){
 	BTreeNode<K, V, CompareFn>* left_sibling = nullptr, right_sibling = nullptr;
@@ -1304,11 +1322,11 @@ void BTree<K,V,CompareFn>::adjustInternal(BTreeNode<K, V, CompareFn>* parent, BT
 
 		if(parent_block_list.front() != node_block_num){
 			// find left sibling
-			left_sibling  = 
+			left_sibling  = this->getNodeFromBlockNum(node_to_adjust->getPrevBlockNo());
 		}
 
 		if(parent_block_list.back() != node_block_num){
-			right_sibling = 
+			right_sibling = this->getNodeFromBlockNum(node_to_adjust->getNextBlockNo());
 		}
 		//borrow from left child
 		if ( left_sibling != nullptr &&  left_sibling->getSize() > MIN_KEYS) {
@@ -1433,7 +1451,7 @@ void TreeLeafNode<K, V, CompareFn>::removeKey(const K& remove_key){
 			key_iter = key_list.erase(old_key_iter);
 			block_iter = block_pair_list.erase(old_block_iter);
 		} else if (cmpl(*key_iter, remove_key)) {
-			// if key > removeKey
+			// if key > remove_key
 			break;
 		} else {
 			//if key < remove_key

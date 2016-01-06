@@ -1193,8 +1193,7 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 
 	std::list<K> key_list;
 	std::list<blockOffsetPair> block_pair_list;
-	BTreeNode<K, V, CompareFn>* trav, next_node;
-	BTreeNode<K, V, CompareFn>* left_sib_of_next_node, right_sib_of_next_node, temp;
+	BTreeNode<K, V, CompareFn>* trav, next_node, left_sib_of_next_node, right_sib_of_next_node, temp = nullptr;
 
 	trav = this->getNodeFromBlockNum(
 		this->getRootBlockNo()
@@ -1248,6 +1247,9 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key){
 	if (temp != nullptr) {
 		K replacement_key = //least key in right subtree of trav
 		temp->replaceKey(remove_key, replacement_key);
+
+
+		delete temp;
 	}
 }
 
@@ -1290,15 +1292,15 @@ bool InternalNode<K,V,CompareFn>::containsKey(const K& key, blockmum_t& next_blo
 template <typename K, typename V, typename CompareFn>
 bool InternalNode<K,V,CompareFn>::replaceKey(const K& key, blockmum_t next_block_number){
 	std::list<K> key_list;
-	std::list<blockOffsetPair> block_pair_list;
+	std::list<blocknum_t> block_list;
 
-	this->getKeys(key_list); this->getBlockNumbers(block_pair_list);
+	this->getKeys(key_list); this->getBlockNumbers(block_list);
 
 	typename std::list<K>::iterator key_iter;
-	typename std::list<blockOffsetPair>::iterator block_iter;
+	typename std::list<blocknum_t>::iterator block_iter;
 
 	for (
-		key_iter = key_list.begin(), block_iter = block_pair_list.begin();
+		key_iter = key_list.begin(), block_iter = block_list.begin();
 		old_key_iter != (key_list).end();
 		// no increment, read comments below
 	) {
@@ -1318,7 +1320,7 @@ bool InternalNode<K,V,CompareFn>::replaceKey(const K& key, blockmum_t next_block
 
 	//TODO: if this is done then we store the node even if num_keys < min_threshold, we may need to change this later
 	this->setKeys(key_list);
-	this->setBlockOffsetPairs(block_pair_list);
+	this->setBlockOffsetPairs(block_list);
 }
 
 
@@ -1329,7 +1331,7 @@ void TreeLeafNode<K, V, CompareFn>::removeKey(const K& remove_key){
 	std::list<K> key_list;
 	std::list<blockOffsetPair> block_pair_list;
 
-	this->getKeys(key_list); this->getBlockNumbers(block_pair_list);
+	this->getKeys(key_list); this->getBlockOffsetPairs(block_pair_list);
 
 	typename std::list<K>::iterator key_iter;
 	typename std::list<blockOffsetPair>::iterator block_iter;

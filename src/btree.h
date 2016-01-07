@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <list>
 #include <cstring>
+#include <assert.h>
 
 //Type Definitions
 typedef long blocknum_t;
@@ -96,11 +97,14 @@ const offset_t START_KEYS = 1 + 4 * sizeof(long);
 
 */
 
+// structure to reference the
+// 'value' blocks in data file
 struct blockOffsetPair{
 	blocknum_t block_number;
 	offset_t offset;
 };
 
+// The abstract class
 template <typename K, typename V, typename CompareFn>
 class BTreeNode {
 
@@ -234,6 +238,7 @@ public:
 	K findMedian();
 };
 
+// Internal Node class
 template <typename K, typename V, typename CompareFn>
 class InternalNode : BTreeNode<K, V, CompareFn> {
 
@@ -295,6 +300,7 @@ public:
 
 };
 
+// The TreeLeafNode class
 template <typename K, typename V, typename CompareFn>
 class TreeLeafNode : BTreeNode<K, V, CompareFn> {
 
@@ -386,22 +392,23 @@ public:
 	void removeKey(const K& remove_key);
 };
 
-/**
-	Some of the fields available in header of BufferedFile
 
-    const size_type key_size;
-	const size_type value_size;
-	const string Identifier = "BTREE";
-
-	These can be accessed as :
-	$buffered_file_object->header->key_size;
-*/
-
+// The Main class
 template <typename K, typename V, typename CompareFn>
 class BTree {
 
+	// OFFSETS for reading header properties
+	const offset_t HEADER_STRING = 0;
+	const offset_t DS_ID = 4;
+	const offset_t ELEM_KEY_SIZE = 12;
+	const offset_t ELEM_VALUE_SIZE = 16;
+	const offset_t ROOT_BLK_NUM = 20;
+	const offset_t TOTAL_BLKS = 20 + sizeof(long);
+	const offset_t HEAD_BLK_NO = 20 + 2*sizeof(long);
+	const offset_t TAIL_BLK_NO = 20 + 3*sizeof(long);
+	const offset_t DATAFILE = 20 + 4*sizeof(long);
+
 private:
-	const size_t Node_type_identifier_size = 1; // in bytes
 
 	BufferedFile* buffered_file_internal;
 	BufferedFile* buffered_file_data;
@@ -415,6 +422,86 @@ private:
 	CompareFn cmpl;
 
 	int calculateM(const size_t blocksize, const size_t key_size);
+
+	// header-related methods
+	void headerInit() {
+		BufferFrame *header = buffered_file_internal->readHeader();
+		char read_main_string[5], read_iden[9];
+
+		for(int i = 0; i < 4; i++) {
+			read_main_string[i] = BufferedFrameReader::read<char>(
+				header, i
+			);
+		}
+
+		for(int i = 0; i < 8; i++) {
+			read_iden[i] = BufferedFrameReader::read<char>(
+				header, i
+			);
+		}
+
+		string str_ms (read_main_string);
+		string str_iden(read_iden);
+
+		// this is an un-initialised first time file
+		if (str_ms != "RMAD"
+			|| str_iden != "BTREE"
+		) {
+			// BufferedFrameWriter::write :: RMADBTREE
+			blocknum_t root_block_num
+				= buffered_file_internal->allotBlock();
+
+			this->setRootBlockNo(root_block_num);
+
+			// write the key size
+			BufferedFrameWriter::write<size_type>(
+				header,
+				ELEM_KEY_SIZE,
+				sizeof(K)
+			);
+
+			// write the value size
+			BufferedFrameWriter::write<size_type>(
+				header,
+				ELEM_VALUE_SIZE,
+				sizeof(V)
+			);
+
+			// write the total blocks as zero
+			BufferedFrameWriter::write<long>(
+				header,
+				TOTAL_BLKS,
+				0
+			);
+
+			// write the head block number of leaves
+			BufferedFrameWriter::write<long>(
+				header,
+				HEAD_BLK_NO,
+				this->root_block_num
+			);
+
+			// write the tail block number of leaves
+			BufferedFrameWriter::write<long>(
+				header,
+				TAIL_BLK_NO,
+				-1
+			);
+
+		} else {
+		// if this is already initialised file
+			this->root_block_num
+				= BufferedFrameReader::read<blocknum_t>(
+					buffered_file_internal->readBlock(
+						this->getRootBlockNo(),
+					),
+					ROOT_BLK_NUM,
+					_rootBlockNum
+				);
+		}
+
+	}
+
 
 
 	// this will read the given block, set the properties accordingly for
@@ -452,14 +539,7 @@ public:
 
 		M = calculateM(blocksize, sizeof(K));
 
-		// this would have read the header from the file and set all the fields accordingly
-		// in the header (might have to make header a friend class of BTree)
-		// Two possibilities:
-		// 1. if the file was made previously, the header is read and values set in mem
-		// 2. if file was not previously used, header class reads required values from BTree class (friend)
-		// and then writes it to the header block on the file
-		buffered_file_internal->header->init();
-
+		this->headerInit();
 		// now ready for operation
 	}
 
@@ -508,6 +588,14 @@ public:
 	blocknum_t getRootBlockNo() {
 		return this->root_block_num;
 	}
+
+	void setRootBlockNo(blocknum_t _rootBlockNum) {
+		this->root_block_num = _rootBlockNum;
+		BufferedFrameWriter::write<blocknum_t>(
+			0, ROOT_BLK_NUM, _rootBlockNum
+		);
+	}
+
 
 	long count(const K&);
 
@@ -574,6 +662,8 @@ public:
 	iterator end();
 };
 
+
+// Iterator and related methods
 template <typename K, typename V, typename CompareFn>
 typename BTree<K, V, CompareFn>::iterator BTree<K, V, CompareFn>::begin() {
 	iterator iter(this);
@@ -670,6 +760,7 @@ typename BTree<K, V, CompareFn>::iterator& BTree<K, V, CompareFn>::iterator::ope
 	return *this;
 }
 
+// B-Tree method - calculateM
 template <typename K, typename V, typename CompareFn>
 int BTree<K, V, CompareFn>::calculateM(const size_t blocksize, const size_t key_size) {
 
@@ -702,6 +793,7 @@ int BTree<K, V, CompareFn>::calculateM(const size_t blocksize, const size_t key_
 	return M;
 };
 
+// Main APIs - start
 template <typename K, typename V, typename CompareFn>
 V BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	blockOffsetPair valueAddr;
@@ -739,6 +831,195 @@ V BTree<K, V, CompareFn>::searchElem(const K& search_key) {
 	BufferFrame* buff = buffered_file_data->readBlock(valueAddr.block_number);
 	return BufferedFrameReader::read<V>(buff, valueAddr.offset);
 };
+
+template <typename K, typename V, typename CompareFn>
+void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
+	BufferFrame* disk_block;
+	BTreeNode<K, V, CompareFn>* next_node, temp;
+	blocknum_t root_block_num = this->getRootBlockNo();
+
+	temp = this->getNodeFromBlockNum(root_block_num);
+
+	if (this->size() == 0) {
+		// i.e. 'first' insert in the tree
+		this->addToNode(new_key, new_value, temp);
+	} else {
+		blockOffsetPair valueAddr;
+		blocknum_t next_block_num;
+
+		// Node for traversing the tree
+		BTreeNode<K, V, CompareFn>* trav = temp, par;
+
+		// split the root if needed and make a new root
+		if (temp->isFull()) {
+			blocknum_t old_root_block_num = this->getRootBlockNo();
+			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
+
+			BTreeNode<K, V, CompareFn>* old_root = temp;
+			// New root must be an InternalNode
+			BTreeNode<K, V, CompareFn>* new_root
+				= new InternalNode<K, V, CompareFn>(new_root_bnum, this->M, true);
+
+			std::list<blocknum_t> blockNumList;
+			new_root->getBlockNumbers(blockNumList);
+
+			// POSSIBLE BUG HERE
+			// Add old root block number as left most child_block_number
+			blockNumList.push_back(old_root_block_num);
+			new_root->setBlockNumbers(blockNumList);
+
+			// Set new_root to be the root of BTree
+			this->setRootBlockNo(new_root_bnum);
+
+			// make isRoot = false in old_root
+			old_root->setIsRoot(false);
+
+			// Split old root
+			trav = this->splitChild(old_root, new_root, new_key);
+		}
+
+		while (trav && ! trav->isLeaf()) {
+			next_block_num = trav->findInNode(new_key);
+			next_node = this->getNodeFromBlockNum(next_block_num);
+
+			// pro-active splitting
+			if (next_node->isFull()) {
+				// returns the proper next node
+
+				next_node = this->splitChild(next_node, trav, new_key);
+
+				delete trav;
+			} else {
+				next_block_num = trav->findInNode(new_key);
+				par = trav;
+				next_node = this->getNodeFromBlockNum(next_block_num);
+
+				delete trav;
+			}
+			trav = next_node;
+		}
+
+		// here, trav is always a leaf node
+
+
+		// if key not present, so add the key and the value
+		// if key already exists, adds another value
+		// with another key instance just next to previous one
+		this->addToNode(new_key, new_value, trav);
+
+		// destructor will automatically write it to the block
+		// plus our setter methods will mark a node's prop 'isChangedInMem'
+		// so that destructor does not write unnecessarily
+		delete trav;
+	}
+
+	this->sz++;
+};
+
+
+template <typename K, typename V, typename CompareFn>
+void BTree<K, V, CompareFn>::deleteElem(const K& remove_key) {
+
+	std::list<K> key_list;
+	std::list<blockOffsetPair> block_pair_list;
+	BTreeNode<K, V, CompareFn>* trav, next_node, temp = nullptr;
+	K replacement_key;
+
+	trav = this->getNodeFromBlockNum(
+		this->getRootBlockNo()
+	);
+
+	bool contains_key;
+	blocknum_t next_block_num;
+
+	if (trav->isLeaf()) {
+		// root node is a leaf
+		trav->removeKey(remove_key);
+		return;
+	}
+
+
+	while (trav && ! trav->isLeaf())) {
+		// method implemented below
+		contains_key = trav->containsKey(remove_key, next_block_num);
+
+		if (contains_key) {
+			temp = trav;
+			// need to replace remove_key with least key in right subtree of temp to satisfy c1 convention
+		}
+		next_node = this->getNodeFromBlockNum(next_block_num);
+
+		if (next_node->isLeaf()) {
+			next_node->removeKey(K);
+			this->adjustLeaf(trav, next_node);
+
+			if (temp != nullptr) {
+				std::list<blocknum_t> block_list;
+				std::list<K> child_keys;
+				blocknum_t least = trav->getSmallestKey();
+
+				BTreeNode<K, V, CompareFn>* first_child = this->getNodeFromBlockNum(least);
+				replacement_key = first_child->getSmallestKey();
+
+				temp->replaceKey(remove_key, replacement_key);
+				delete temp;
+			}
+			break;
+
+		} else {
+			this->adjustInternal(trav, next_node);
+			// restart delete from current trav
+			continue;
+		}
+	}
+
+	// reduce sz
+	this->sz--;
+}
+
+template <typename K, typename V, typename CompareFn>
+long BTree<K, V, CompareFn>::count(const K& find_key) {
+
+	BTreeNode<K, V, CompareFn>* trav, next_node;
+	trav = this->getNodeFromBlockNum(
+		this->getRootBlockNo()
+	);
+	blocknum_t next_block_num;
+	long count = 0;
+
+	while(trav && ! trav->isLeaf()) {
+		// always called on an internal node
+		next_block_num = trav->findInNode(find_key);
+		if (next_block_num == NULL_BLOCK) return 0;
+
+		next_node
+			= this->getNodeFromBlockNum(next_block_num);
+		trav = next_node;
+	}
+
+	if (trav && trav->isLeaf()) {
+		typename std::list<K>::const_iterator key_iter;
+
+		std::list<K> keyList;
+		trav->getKeys(keyList);
+
+		for (
+			key_iter = keyList.begin();
+			key_iter != keyList.end();
+			key_iter++
+		) {
+			if (eq(*key_iter, find_key)) {
+				count++;
+			} else if (cmpl(*key_iter, find_key)) {
+				break;
+			}
+		}
+	}
+
+	return count;
+};
+
+// Main APIs - end
 
 template <typename K, typename V, typename CompareFn>
 blocknum_t InternalNode<K, V, CompareFn>::findInNode(const K& find_key) {
@@ -797,95 +1078,6 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::findInNode(const K& find_key) {
 };
 
 
-template <typename K, typename V, typename CompareFn>
-void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
-	BufferFrame* disk_block;
-	BTreeNode<K, V, CompareFn>* next_node, temp;
-	blocknum_t root_block_num = this->getRootBlockNo();
-
-	temp = this->getNodeFromBlockNum(root_block_num);
-
-	if (this->size() == 0) {
-		// i.e. 'first' insert in the tree
-		this->addToNode(new_key, new_value, temp);
-	} else {
-		blockOffsetPair valueAddr;
-		blocknum_t next_block_num;
-
-		// Node for traversing the tree
-		BTreeNode<K, V, CompareFn>* trav = temp, par;
-
-		// split the root if needed and make a new root
-		if (temp->isFull()) {
-			blocknum_t old_root_block_num = this->getRootBlockNo();
-			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
-
-			BTreeNode<K, V, CompareFn>* old_root = temp;
-			// New root must be an InternalNode
-			BTreeNode<K, V, CompareFn>* new_root
-				= new InternalNode<K, V, CompareFn>(new_root_bnum, this->M, true);
-
-			std::list<blocknum_t> blockNumList;
-			new_root->getBlockNumbers(blockNumList);
-
-			// POSSIBLE BUG HERE
-			// Add old root block number as left most child_block_number
-			blockNumList.push_back(old_root_block_num);
-			new_root->setBlockNumbers(blockNumList);
-
-			// Set new_root to be the root of BTree
-			this->setRootBlockNo(new_root_bnum);
-
-			// Updates the header block on disk file,
-			// to indicate the new root block no
-			this->buffered_file_internal->header->setRootBlockNo(
-				new_root_bnum
-			);
-
-			// make isRoot = false in old_root
-			old_root->setIsRoot(false);
-
-			// Split old root
-			trav = this->splitChild(old_root, new_root, new_key);
-		}
-
-		while (trav && ! trav->isLeaf()) {
-			next_block_num = trav->findInNode(new_key);
-			next_node = this->getNodeFromBlockNum(next_block_num);
-
-			// pro-active splitting
-			if (next_node->isFull()) {
-				// returns the proper next node
-
-				next_node = this->splitChild(next_node, trav, new_key);
-
-				delete trav;
-			} else {
-				next_block_num = trav->findInNode(new_key);
-				par = trav;
-				next_node = this->getNodeFromBlockNum(next_block_num);
-
-				delete trav;
-			}
-			trav = next_node;
-		}
-
-		// here, trav is always a leaf node
-
-
-		// if key not present, so add the key and the value
-		// if key already exists, adds another value
-		// with another key instance just next to previous one
-		this->addToNode(new_key, new_value, trav);
-
-		// destructor will automatically write it to the block
-		// plus our setter methods will mark a node's prop 'isChangedInMem'
-		// so that destructor does not write unnecessarily
-		delete trav;
-	}
-
-	this->sz++;
-};
 
 template <typename K, typename V, typename CompareFn>
 K BTreeNode<K, V, CompareFn>::findMedian() {
@@ -1152,51 +1344,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::getNodeFromBlockNum(
 	return new_node;
 };
 
-
-template <typename K, typename V, typename CompareFn>
-long BTree<K, V, CompareFn>::count(const K& find_key) {
-
-	BTreeNode<K, V, CompareFn>* trav, next_node;
-	trav = this->getNodeFromBlockNum(
-		this->getRootBlockNo()
-	);
-	blocknum_t next_block_num;
-	long count = 0;
-
-	while(trav && ! trav->isLeaf()) {
-		// always called on an internal node
-		next_block_num = trav->findInNode(find_key);
-		if (next_block_num == NULL_BLOCK) return 0;
-
-		next_node
-			= this->getNodeFromBlockNum(next_block_num);
-		trav = next_node;
-	}
-
-	if (trav && trav->isLeaf()) {
-		typename std::list<K>::const_iterator key_iter;
-
-		std::list<K> keyList;
-		trav->getKeys(keyList);
-
-		for (
-			key_iter = keyList.begin();
-			key_iter != keyList.end();
-			key_iter++
-		) {
-			if (eq(*key_iter, find_key)) {
-				count++;
-			} else if (cmpl(*key_iter, find_key)) {
-				break;
-			}
-		}
-	}
-
-	return count;
-};
-
 /*
-
 	DELETION:
 	(DO NOT WRITE OTHER METHODS TILL "DELETION ENDS" COMMENT)
 
@@ -1204,65 +1352,6 @@ long BTree<K, V, CompareFn>::count(const K& find_key) {
 	C1: if a key is removed it must be removed from both internal and external node
 */
 
-template <typename K, typename V, typename CompareFn>
-void BTree<K, V, CompareFn>::deleteElem(const K& remove_key) {
-
-	std::list<K> key_list;
-	std::list<blockOffsetPair> block_pair_list;
-	BTreeNode<K, V, CompareFn>* trav, next_node, temp = nullptr;
-	K replacement_key;
-
-	trav = this->getNodeFromBlockNum(
-		this->getRootBlockNo()
-	);
-
-	bool contains_key;
-	blocknum_t next_block_num;
-
-	if (trav->isLeaf()) {
-		// root node is a leaf
-		trav->removeKey(remove_key);
-		return;
-	}
-
-
-	while (trav && ! trav->isLeaf())) {
-		// method implemented below
-		contains_key = trav->containsKey(remove_key, next_block_num);
-
-		if (contains_key) {
-			temp = trav;
-			// need to replace remove_key with least key in right subtree of temp to satisfy c1 convention
-		}
-		next_node = this->getNodeFromBlockNum(next_block_num);
-
-		if (next_node->isLeaf()) {
-			next_node->removeKey(K);
-			this->adjustLeaf(trav, next_node);
-
-			if (temp != nullptr) {
-				std::list<blocknum_t> block_list;
-				std::list<K> child_keys;
-				blocknum_t least = trav->getSmallestKey();
-
-				BTreeNode<K, V, CompareFn>* first_child = this->getNodeFromBlockNum(least);
-				replacement_key = first_child->getSmallestKey();
-
-				temp->replaceKey(remove_key, replacement_key);
-				delete temp;
-			}
-			break;
-
-		} else {
-			this->adjustInternal(trav, next_node);
-			// restart delete from current trav
-			continue;
-		}
-	}
-
-	// reduce sz
-	this->sz--;
-}
 
 // NOTE: adjustLeaf and adjustInternal can be made into one method by adding if (leaf) {} else{}
 // if next_node (i.e node_to_adjust) is a leaf node

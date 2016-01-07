@@ -1366,7 +1366,60 @@ void BTree<K,V,CompareFn>::adjustLeaf(
 			if (parent->isRoot() && parent_key_list.size() < 2) {
 				// If parent is root and has only one key, 
 				//then merge parent and both its children into one node, 
-				// update root block number in ??
+				// update root block number in ?? ANS: HEADER BLOCK!
+
+				//two cases:
+				//case 1: node_to_adjust is right child of root (if case)
+				//case 2: node_to_adjust is left child of root   (else case)
+
+				if(left_sibling != nullptr){
+					//add everyting from nod_to_adjust to left_sib and make left_sibling the root node, discard all other nodes as 
+					node_key_iter = node_key_list.begin();
+					node_block_iter = node_block_list.begin();
+
+					left_sibling->getKeys(left_sib_key_list);
+					left_sibling->getBlockOffsetPairs(left_sib_block_list);
+
+					while(node_key_iter != node_key_list.end()) {
+						left_sib_key_list.push_back(*node_key_iter);
+						left_sib_block_list.push_back(*node_block_iter);
+
+						node_key_iter = node_key_list.erase();
+						node_block_iter = node_block_list.erase();
+						//
+						
+					}
+
+					left_sibling->setKeys(left_sib_key_list);
+					left_sibling->setBlockOffsetPairs(left_sib_block_list);
+
+					//TODO: Make left_subling the ROOT NODE
+
+				} else {
+
+					right_sibling->getKeys(right_sib_key_list);
+					right_sibling->getBlockOffsetPairs(right_sib_block_list);
+
+					typename std::list<K>::iterator right_sib_key_iter = node_key_list.begin();
+					typename std::list<blockOffsetPair>::iterator right_sib_block_iter = node_block_list.begin();
+
+					while(right_sib_key_iter != right_sib_key_list.end()) {
+						node_key_list.push_back(*right_sib_key_iter);
+						node_block_list.push_back(*right_sib_block_iter);
+
+						right_sib_key_iter = right_sib_key_list.erase();
+						right_sib_block_iter = right_sib_block_list.erase();
+						
+					}
+
+					node_to_adjust->setKeys(node_key_list);
+					node_to_adjust->setBlockNumbers(node_block_list);
+
+					//TODO: MAKE node_to_adjust the ROOT NODE
+
+				}
+			}	
+
 			} else {
 				//  MERGE: NON-SPECIAL
 				// if parent is the only internal Node and there are only two nodes 
@@ -1553,6 +1606,85 @@ void BTree<K,V,CompareFn>::adjustInternal(
 
 			if ( parent->isRoot() && (parent->getSize() < 2) ) {
 				// If parent has only one key, then merge parent and both its children into one node
+				// node_to_adjust is eihter the leftmost child of root or right most child of root
+				//since num of keys in parent == 1
+
+				//first add the only remaining key in root to the left child of root
+				//then
+				//add all keys AND blocks from right child of root to left child if root and make left child the root node, discard all other nodes
+
+				//two cases:
+				//case 1: node_to_adjust is right child of root (if case)
+				//case 2: node_to_adjust is left child of root   (else case)
+
+				if(left_sibling != nullptr){
+					// CASE 1
+
+					//first add the only remaining key in root to the left_sibling
+					//then
+					//add all keys AND blocks from nod_to_adjust to left_sib and make left_sibling the root node, discard all other nodes
+
+
+
+
+					node_key_iter = node_key_list.begin();
+					node_block_iter = node_block_list.begin();
+
+					left_sibling->getKeys(left_sib_key_list);
+					left_sibling->getBlockOffsetPairs(left_sib_block_list);
+
+					//TODO: should it be parent_key_list.front() or *(parent_key_list.front())??
+					left_sib_key_list.push_back(parent_key_list.front());
+
+					while(node_key_iter != node_key_list.end()) {
+						left_sib_key_list.push_back(*node_key_iter);
+						left_sib_block_list.push_back(*node_block_iter);
+
+						node_key_iter = node_key_list.erase();
+						node_block_iter = node_block_list.erase();
+						//
+						
+					}
+
+					left_sib_block_list.push_back(*node_block_iter);
+					node_block_iter = node_block_list.erase();
+
+					left_sibling->setKeys(left_sib_key_list);
+					left_sibling->setBlockOffsetPairs(left_sib_block_list);
+
+					//TODO: make left_sibling the root node
+
+				} else {
+
+					// CASE 2:
+
+					right_sibling->getKeys(right_sib_key_list);
+					right_sibling->getBlockOffsetPairs(right_sib_block_list);
+
+					typename std::list<K>::iterator right_sib_key_iter = right_sib_key_list.begin();
+					typename std::list<blockOffsetPair>::iterator right_sib_block_iter = right_sib_block_list.begin();
+
+					//TODO: should it be parent_key_list.front() or *(parent_key_list.front())??
+					node_key_list.push_back(parent_key_list.front());
+
+					while(right_sib_key_iter != right_sib_key_list.end()) {
+						node_key_list.push_back(*right_sib_key_iter);
+						node_block_list.push_back(*right_sib_block_iter);
+
+						right_sib_key_iter = right_sib_key_list.erase();
+						right_sib_block_iter = right_sib_block_list.erase();
+						
+					}
+
+					node_block_list.push_back(*right_sib_block_iter);
+					right_sib_block_iter = right_sib_block_list.erase();
+
+					node_to_adjust->setKeys(node_key_list);
+					node_to_adjust->setBlockNumbers(node_block_list);
+
+					//TODO: make node_to_adjust the root node
+
+				}
 
 
 			} else {

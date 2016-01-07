@@ -2,12 +2,12 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <cstring>
+#include "constant_defs.h"
 
 /* fixed size page buffer implementation
  * assuming one block header
  */
 
-class BufferedFile;
 class FramePool;
 class BufferFrame;
 
@@ -32,7 +32,7 @@ private:
 public:
 	// default numbers are arbitrary. change to best value.
 	// reserved_memory is the size of buffer pool in main memory to be reserved for the application.
-	BufferedFile(const char* filepath, size_t blksize = 4096, size_t reserved_memory = 1048576);
+	BufferedFile(const char* filepath, int file_type, size_t blksize = DEFAULT_BLKSIZE, size_t reserved_memory = DEFAILT_RESERVEDMEM);
 	~BufferedFile();
 	BufferFrame* readBlock(long block_number);
 	void writeBlock(long block_number);
@@ -45,22 +45,27 @@ public:
 class BufferFrame {
 	friend class BufferedFile;
 	friend class FramePool;
+	friend class NonPriorityFramePool;
+	friend class PriorityFramePool;
 private:
 	bool is_valid;
 	bool is_dirty;
 	bool is_pinned;
+	size_t priority_num;
+	size_t max_chance;
 	long block_number;
 	void* data;
 	const BufferedFile* file_ref;
 	
 	BufferFrame *next, *prev;
 public:
-	BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
-	BufferFrame() : is_valid(false), is_dirty(false), is_pinned(false), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
+	BufferFrame(const BufferedFile* file) : is_valid(false), is_dirty(false), is_pinned(false), priority_num(0), max_chance(0), block_number(-1), next(nullptr), prev(nullptr), file_ref(file) { data = malloc(file->block_size); }
+	BufferFrame() : is_valid(false), is_dirty(false), is_pinned(false), priority_num(0), max_chance(0), block_number(-1), next(nullptr), prev(nullptr), file_ref(nullptr), data(nullptr) { }
 	~BufferFrame() { free(data); }
 	void setBufferedFile(const BufferedFile* file) { file_ref = file; data = malloc(file_ref->block_size); }
 	void pin() { is_pinned = true; }
 	void unpin() { is_pinned = false; }
+	void setPriority(size_t p) { max_chance = p; priority_num = max_chance; }
 	void memcpy(const void* src, size_t offset, size_t size);
 	void memset(char ch, size_t offset, size_t size);
 	void memmove(const void* src, size_t offset, size_t size);
@@ -68,23 +73,6 @@ public:
 	template <typename T> T read(size_t offset);
 	template <typename T> T* readPtr(size_t offset);
 	const void* readRawData(size_t offset);
-};
-
-class FramePool
-{
-	friend class BufferedFile;
-private:
-	const int pool_size;
-	BufferFrame* dllist;
-	BufferFrame* head;
-
-public:
-	FramePool(const BufferedFile* file, int buffer_pool_size);
-	~FramePool();
-	BufferFrame* getHead();
-	BufferFrame* getNewFrame();
-	void doAccessUpdate(BufferFrame* ptr);
-	void removeFrame(BufferFrame* ptr);
 };
 
 void BufferFrame::memcpy(const void* src, size_t offset, size_t size)
@@ -129,6 +117,33 @@ const void* BufferFrame::readRawData(size_t offset)
 	return (void*)((char*)data + offset);
 }
 
+class FramePool
+{
+	friend class BufferedFile;
+protected:
+	const int pool_size;
+	BufferFrame* dllist;
+	BufferFrame* head;
+public:
+	FramePool(const BufferedFile* file, int buffer_pool_size);
+	virtual ~FramePool()
+	{
+		for(auto i=0; i < pool_size; i++)
+		{
+			if(dllist[i].is_dirty)
+			{
+				pwrite(dllist[i].file_ref->fd, dllist[i].data, dllist[i].file_ref->block_size, dllist[i].file_ref->getblockoffset(dllist[i].block_number));
+			}
+		}
+		delete [] dllist;
+		delete head;
+	}
+	BufferFrame* getHead();
+	virtual BufferFrame* getNewFrame(){}
+	virtual void doAccessUpdate(BufferFrame* ptr){}
+	virtual void removeFrame(BufferFrame* ptr){}
+};
+
 FramePool::FramePool(const BufferedFile* file, int buffer_pool_size) : pool_size(buffer_pool_size)
 {
 	dllist = new BufferFrame[pool_size]();
@@ -149,23 +164,24 @@ FramePool::FramePool(const BufferedFile* file, int buffer_pool_size) : pool_size
 		dllist[i].prev = (dllist + i - 1);
 	}
 }
-FramePool::~FramePool()
-{
-	for(auto i=0; i < pool_size; i++)
-	{
-		if(dllist[i].is_dirty)
-		{
-			pwrite(dllist[i].file_ref->fd, dllist[i].data, dllist[i].file_ref->block_size, dllist[i].file_ref->getblockoffset(dllist[i].block_number));
-		}
-	}
-	delete [] dllist;
-	delete head;
-}
+
 BufferFrame* FramePool::getHead()
 {
 	return head;
 }
-BufferFrame* FramePool::getNewFrame()
+
+class NonPriorityFramePool : public FramePool
+{
+	friend class BufferedFile;
+public:
+	NonPriorityFramePool(const BufferedFile* file, int buffer_pool_size) : FramePool(file, buffer_pool_size) {}
+	~NonPriorityFramePool() {}
+	BufferFrame* getNewFrame();
+	void doAccessUpdate(BufferFrame* ptr);
+	void removeFrame(BufferFrame* ptr);
+};
+
+BufferFrame* NonPriorityFramePool::getNewFrame()
 {
 	BufferFrame* trav = head->next;
 	while(trav->is_pinned == true && trav != head)
@@ -173,7 +189,7 @@ BufferFrame* FramePool::getNewFrame()
 
 	return trav;
 }
-void FramePool::doAccessUpdate(BufferFrame* ptr)
+void NonPriorityFramePool::doAccessUpdate(BufferFrame* ptr)
 {
 	ptr->next->prev = ptr->prev;
 	ptr->prev->next = ptr->next;
@@ -182,7 +198,7 @@ void FramePool::doAccessUpdate(BufferFrame* ptr)
 	head->prev->next = ptr;
 	head->prev = ptr;
 }
-void FramePool::removeFrame(BufferFrame* ptr)
+void NonPriorityFramePool::removeFrame(BufferFrame* ptr)
 {
 	ptr->next->prev = ptr->prev;
 	ptr->prev->next = ptr->next;
@@ -196,7 +212,69 @@ void FramePool::removeFrame(BufferFrame* ptr)
 	ptr->block_number = -1;
 }
 
-BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved_memory) :
+class PriorityFramePool : public FramePool
+{
+	friend class BufferedFile;
+private:
+	size_t pages_pinned;
+public:
+	PriorityFramePool(const BufferedFile* file, int buffer_pool_size) : FramePool(file, buffer_pool_size), pages_pinned(0) {}
+	~PriorityFramePool() {}
+	BufferFrame* getNewFrame();
+	void doAccessUpdate(BufferFrame* ptr);
+	void removeFrame(BufferFrame* ptr);
+};
+
+BufferFrame* PriorityFramePool::getNewFrame()
+{
+	BufferFrame* trav = head->next;
+	if(pages_pinned!=pool_size)
+	{
+		while(trav == head || trav->is_pinned==true || trav->priority_num!=0)
+		{
+			if(trav !=head && trav->priority_num!=0) trav->priority_num--;
+			trav = trav->next;
+		}
+	}
+	else
+	{
+		while(trav == head || trav->priority_num!=0)
+		{
+			if(trav !=head) trav->priority_num--;
+			trav = trav->next;
+		}
+	}
+	return trav;
+}
+void PriorityFramePool::doAccessUpdate(BufferFrame* ptr)
+{
+	ptr->next->prev = ptr->prev;
+	ptr->prev->next = ptr->next;
+	ptr->next = head;
+	ptr->prev = head->prev;
+	head->prev->next = ptr;
+	head->prev = ptr;
+
+	if(ptr->max_chance!=0 && ptr->priority_num < ptr->max_chance) ptr->priority_num++;
+}
+void PriorityFramePool::removeFrame(BufferFrame* ptr)
+{
+	ptr->next->prev = ptr->prev;
+	ptr->prev->next = ptr->next;
+	ptr->next = head->next;
+	ptr->prev = head;
+	head->next->prev = ptr;
+	head->next = ptr;
+
+	ptr->is_valid = false;
+	ptr->is_dirty = false;
+	ptr->block_number = -1;
+	ptr->priority_num = 0;
+	ptr->max_chance = 0;
+	ptr->is_pinned = false;	
+}
+
+BufferedFile::BufferedFile(const char* filepath, int file_type, size_t blksize, size_t reserved_memory) :
 						block_size(blksize), buffer_pool_size(reserved_memory/blksize), last_block_alloted(0)
 {
 	fd = open(filepath, O_RDWR|O_CREAT, 0755);
@@ -207,7 +285,18 @@ BufferedFile::BufferedFile(const char* filepath, size_t blksize, size_t reserved
 		throw std::runtime_error{"Unable to lock file"};
 	}
 	
-	frame_pool = new FramePool(this,buffer_pool_size);
+	switch (file_type)
+	{
+	case VECTOR_TYPE:
+		frame_pool = new NonPriorityFramePool(this,buffer_pool_size);
+		break;
+	case BTREE_TYPE:
+		frame_pool = new PriorityFramePool(this,buffer_pool_size);
+		break;
+	default:
+		throw "invalid data structure selected!";
+	}
+
 	header = new BufferFrame(this);
 	
 	header->is_valid = true;

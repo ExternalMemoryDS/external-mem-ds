@@ -105,7 +105,15 @@ public:
 
 	vector(const char* pathname, size_type blocksize) : block_size(blocksize), element_size(sizeof(T)),
 		sz(0), num_elements_per_block(blocksize/(sizeof(T))) {
-		buffered_file = new BufferedFile(pathname, block_size, block_size*10);
+		try
+		{
+			buffered_file = new BufferedFile(pathname, VECTOR_TYPE, block_size, block_size*10);
+		}
+		catch(const char* msg)
+		{
+			throw msg;
+		}
+		
 		
 		// dirty way to decode the header. reading size from header.
 		BufferFrame* header = buffered_file->readHeader();

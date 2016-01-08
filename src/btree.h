@@ -299,6 +299,8 @@ public:
 		// this->buffered_file_internal = int_file;
 		// this->buffered_file_data = data_file;
 		// this->isRoot = _isRoot;
+
+		BufferedFrameWriter::write<bool>(this->buffered_file_internal->readBlock(this->block_number), 0, false);
 	};
 
 	blocknum_t findInNode(const K&);	//returns block number of appropriate child node
@@ -391,6 +393,7 @@ public:
 		// this->buffered_file_internal = int_file;
 		// this->buffered_file_data = data_file;
 		// this->isRoot = _isRoot;
+		BufferedFrameWriter::write<bool>(this->buffered_file_internal->readBlock(this->block_number), 0, true);
 	};
 
 	blockOffsetPair findInNodeLeaf(const K&);
@@ -674,6 +677,8 @@ public:
 		printf("M : %ld\n", M);
 		this->headerInit();
 		// now ready for operation
+
+		BTreeNode<K, V, CompareFn> * root = new TreeLeafNode<K, V,CompareFn>(this->root_block_num, this->M, buffered_file_internal, buffered_file_data, true);
 	}
 
 	~BTree() {

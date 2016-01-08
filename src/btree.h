@@ -331,7 +331,7 @@ public:
 
 		for(offset_t curr = this->START_BLOCKNUMS;
 			block_iter != list_inst.end();
-			curr += sizeof(blocknum_t)
+			curr += sizeof(blocknum_t), block_iter++
 		) {
 			BufferedFrameWriter::write<blocknum_t>(
 				this->buffered_file_internal->readBlock(
@@ -456,7 +456,7 @@ public:
 
 		for(offset_t curr = this->START_BLOCKNUMS;
 			block_iter != list_inst.end();
-			curr += sizeof(blockOffsetPair)
+			curr += sizeof(blockOffsetPair), block_iter++
 		) {
 			BufferedFrameWriter::write<blockOffsetPair>(
 				this->buffered_file_internal->readBlock(

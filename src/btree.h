@@ -171,7 +171,7 @@ void BTreeNode<K, V, CompareFn>::setIsRoot(bool new_root_bool) {
 // methods for comparing keys
 template <typename K, typename V, typename CompareFn>
 bool BTreeNode<K, V, CompareFn>::eq(const K& k1, const K& k2) {
-	return !(cmpl(k1, k2) && cmpl(k2, k1));
+	return (!cmpl(k1, k2) && !cmpl(k2, k1));
 }
 
 template <typename K, typename V, typename CompareFn>
@@ -280,6 +280,14 @@ void BTreeNode<K, V, CompareFn>::setKeys(std::list<K>& list_inst) {
 			curr, *key_iter
 		);
 	}
+
+	// also update the latest curr_keys in the file
+	BufferedFrameWriter::write<long>(
+		buffered_file_internal->readBlock(
+			this->block_number
+		),
+		NUM_KEYS, list_inst.size()
+	);
 }
 
 
@@ -523,9 +531,14 @@ private:
 	int calculateM(const size_t blocksize, const size_t key_size);
 
 	// header-related methods
-	void headerInit() {
+	bool headerInit() {
 		BufferFrame *header = buffered_file_internal->readHeader();
 		char read_main_string[5], read_iden[9];
+
+		bool ret_val = false;
+
+		const char main_str[5] = "RMAD";
+		const char iden[6] = "BTREE";
 
 		for(int i = 0; i < 4; i++) {
 			read_main_string[i] = BufferedFrameReader::read<char>(
@@ -533,7 +546,7 @@ private:
 			);
 		}
 
-		for(int i = 0; i < 8; i++) {
+		for(int i = 0; i < 5; i++) {
 			read_iden[i] = BufferedFrameReader::read<char>(
 				header, DS_ID + i
 			);
@@ -549,22 +562,32 @@ private:
 			const char main_str[5] = "RMAD";
 			const char iden[6] = "BTREE";
 
-			// for(int i = 0; i < 4; i++) {
-			// 	BufferedFrameWriter::write<char>(
-			// 		header, i, main_str[i]
-			// 	);
-			// }
+			for(int i = 0; i < std::strlen(main_str); i++) {
+				BufferedFrameWriter::write<char>(
+					header, i, main_str[i]
+				);
+			}
 
-			// for(int i = 0; i < 5; i++) {
-			// 	BufferedFrameWriter::write<char>(
-			// 		header, DS_ID + i, iden[i]
-			// 	);
-			// }
+			for(int i = 0; i < std::strlen(iden); i++) {
+				BufferedFrameWriter::write<char>(
+					header, DS_ID + i, iden[i]
+				);
+			}
 
 			blocknum_t root_block_num
 				= buffered_file_internal->allotBlock();
 
 			this->setRootBlockNo(root_block_num);
+
+			BufferFrame* block = buffered_file_internal->readBlock(
+				root_block_num
+			);
+
+			BufferedFrameWriter::write<bool>(
+				block,
+				NODE_TYPE,
+				true
+			);
 
 			// write the key size
 			BufferedFrameWriter::write<size_type>(
@@ -608,7 +631,10 @@ private:
 					header,
 					ROOT_BLK_NUM
 				);
+			ret_val = true;
 		}
+
+		return ret_val;
 	}
 
 
@@ -650,7 +676,7 @@ private:
 
 	// methods for comparing keys
 	bool eq(const K& k1, const K& k2) {
-		return !(cmpl(k1, k2) && cmpl(k2, k1));
+		return (!cmpl(k1, k2) && !cmpl(k2, k1));
 	}
 
 	bool neq(const K& k1, const K& k2) {
@@ -667,18 +693,17 @@ public:
 
 		buffered_file_data = new BufferedFile("data_file", sizeof(V));
 
-		// will write it to the appropriate position in the header
-		this->setDataFileName(
-			"data_file"
-		);
-
 		M = calculateM(blocksize, sizeof(K));
 
 		printf("M : %ld\n", M);
-		this->headerInit();
-		// now ready for operation
+		if (this->headerInit()) {
+			// will write it to the appropriate position in the header
+			this->setDataFileName(
+				"data_file"
+			);
+		}
 
-		BTreeNode<K, V, CompareFn> * root = new TreeLeafNode<K, V,CompareFn>(this->root_block_num, this->M, buffered_file_internal, buffered_file_data, true);
+		// now ready for operation
 	}
 
 	~BTree() {
@@ -732,6 +757,17 @@ public:
 		BufferFrame* header = buffered_file_internal->readHeader();
 		BufferedFrameWriter::write<blocknum_t>(
 			header, ROOT_BLK_NUM, _rootBlockNum
+		);
+	}
+
+	void setSize(size_type new_size) {
+		// write the total blocks as zero
+		this->sz++;
+		BufferFrame* header = buffered_file_internal->readHeader();
+		BufferedFrameWriter::write<long>(
+			header,
+			TOTAL_BLKS,
+			new_size
 		);
 	}
 
@@ -980,17 +1016,25 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 	temp = this->getNodeFromBlockNum(root_block_num);
 
 	if (this->size() == 0) {
+		// printf("Here\n");
 		// i.e. 'first' insert in the tree
 		this->addToNode(new_key, new_value, temp);
+		this->setSize(
+			this->size() + 1
+		);
+		return;
+
 	} else {
 		blockOffsetPair valueAddr;
 		blocknum_t next_block_num;
+		// printf("Here 2\n");
 
 		// Node for traversing the tree
 		BTreeNode<K, V, CompareFn> *trav = temp, *par;
 
 		// split the root if needed and make a new root
 		if (temp->isFull()) {
+			printf("NEVER HERE\n");
 			blocknum_t old_root_block_num = this->getRootBlockNo();
 			blocknum_t new_root_bnum = buffered_file_internal->allotBlock();
 
@@ -1023,6 +1067,7 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 		while (trav && ! trav->isLeaf()) {
 			next_block_num = trav->findInNode(new_key);
+			// printf("HERE 3 : %ld\n", next_block_num);
 			next_node = this->getNodeFromBlockNum(next_block_num);
 
 			// pro-active splitting
@@ -1056,7 +1101,9 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 		delete trav;
 	}
 
-	this->sz++;
+	this->setSize(
+		this->size() + 1
+	);
 };
 
 
@@ -1463,12 +1510,21 @@ void BTree<K, V, CompareFn>::addToNode(
 		}
 	}
 
+	BufferedFrameWriter::write<V>(
+		buffered_file_data->readBlock(
+			new_block_offset.block_number
+		),
+		0,
+		new_value
+	);
+
 	// add entries in the resp. lists
 	keyList.insert(key_iter, new_key);
 	blockPairList.insert(block_iter, new_block_offset);
 
 	current_node->setKeys(keyList);
 	current_node->setBlockOffsetPairs(blockPairList);
+	// printf("%ld\n",current_node->getSize());
 };
 
 template <typename K, typename V, typename CompareFn>
@@ -1481,7 +1537,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::getNodeFromBlockNum(
 	BufferFrame* buff_frame =  this->buffered_file_internal->readBlock(block_number);
 
 	offset_t curr_offset = 0;
-	node_t node_type_id = BufferedFrameReader::read<node_t>(buff_frame, curr_offset++);
+	bool node_type_id = BufferedFrameReader::read<bool>(buff_frame, curr_offset++);
 
 	if (this->root_block_num == block_number) {
 		is_this_root = true;

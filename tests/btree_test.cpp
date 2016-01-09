@@ -4,7 +4,7 @@
 #include <iostream>
 #include <vector>
 
-#define NUM_INSERT 5
+#define NUM_INSERT 29
 
 struct test_Comparator {
 	test_Comparator() {}
@@ -21,64 +21,21 @@ int main()
 
 	auto dice = std::bind ( distribution, generator );
 
-	for(auto i = 1; i <= NUM_INSERT; i++)
-	btree_test->insertElem(dice(), dice());
+	// test_Comparator cmpl;
+	// std::cout << "CMPL : " << cmpl(7, 4) << std::endl;
 
-	std::cout << btree_test->size() << std::endl;
-	std::cout << std::endl;
-
-	// for (auto it = 0; it < exvec.size(); it++)
-	// {
-	// 	std::cout << exvec[it] << std::endl;
+	// for(auto i = 1; i <= NUM_INSERT; i++) {
+	// 	btree_test->insertElem(i, i + 1);
+	// 	std::cout << "INSERTED ELEMENT K : " << i << " VALUE : " << (i+1) << std::endl;
 	// }
 
+	std::cout << "ELEMENT 4 : " << btree_test->searchElem(4) << std::endl;
+	std::cout << "ELEMENT 14 : " << btree_test->searchElem(14) << std::endl;
+	// std::cout << "ELEMENT 400 : " << btree_test->searchElem(400) << std::endl;
+
+	std::cout << "SIZE : " << btree_test->size() << std::endl;
 	std::cout << std::endl;
 
-	// delete btree_test;
-
-	//exvec.insert(2, 5);
-// 	std::vector<int> ins_vec;
-// 	for(auto i = 1; i<=231; i++)
-// 		ins_vec.push_back(dice());
-// 	exvec.insert(vector<int>::iterator(16,&exvec), ins_vec.begin(), ins_vec.end());
-
-// 	for (auto it = 0; it < exvec.size(); it++)
-// 	{
-// 		std::cout << exvec[it] << std::endl;
-// 	}
-
-// 	//exvec.clear();
-
-// 	std::cout << std::endl;
-// 	std::cout << exvec.size() << std::endl;
-
-// 	exvec.erase(vector<int>::iterator(2,&exvec), vector<int>::iterator(8250,&exvec));
-
-// 	std::cout << std::endl;
-
-// 	for (auto it = exvec.begin(); it != exvec.end(); it++)
-// 	{
-// 		std::cout << *it << std::endl;
-// 	}
-
-// 	std::cout << std::endl;
-
-// 	for (auto it = exvec.rbegin(); it != exvec.rend(); it++)
-// 	{
-// 		std::cout << *it << std::endl;
-// 		*it = 3;
-// 	}
-
-// 	std::cout << std::endl;
-
-// 	for (auto it = exvec.cbegin(); it != exvec.cend(); it++)
-// 	{
-// 		std::cout << *it << std::endl;
-// // 		*it = 5;
-// 	}
-
-// 	std::cout << std::endl;
-// 	std::cout << exvec.size() << std::endl;
-
+	delete btree_test;
 	return 0;
 }

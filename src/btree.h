@@ -132,7 +132,7 @@ public:
 
 	virtual void getBlockNumbers(std::list<blocknum_t>& list_inst) =0;
 	virtual void setBlockNumbers(std::list<blocknum_t>& list_inst) =0;
-	virtual void replaceKey(K&, K&) =0;
+	virtual void replaceKey(K& remove_key, K& replacement_key) =0;
 	virtual bool containsKey(const K& key, blocknum_t& next_block_number) =0;
 	virtual K findMedian() =0;
     virtual blocknum_t getPrevBlockNo() =0;
@@ -177,7 +177,7 @@ bool BTreeNode<K, V, CompareFn>::eq(const K& k1, const K& k2) {
 
 template <typename K, typename V, typename CompareFn>
 bool BTreeNode<K, V, CompareFn>::neq(const K& k1, const K& k2) {
-	return !(eq(k1, k2));
+	return !(this->eq(k1, k2));
 }
 
 // GETTER METHODS
@@ -345,7 +345,7 @@ public:
 		}
 	}
 
-	void replaceKey(K&, K&);
+	void replaceKey(K& remove_key, K& replacement_key);
 	K findMedian();
 
 	// never initialised
@@ -481,7 +481,7 @@ public:
 	void setBlockNumbers(std::list<blocknum_t>& list_inst) {
 		return;
 	};
-	void replaceKey(K&, K&) {
+	void replaceKey(K& remove_key, K& replacement_key) {
 		return;
 	};
 	blocknum_t findInNode(const K&) {
@@ -681,9 +681,9 @@ private:
 	);
 
 	void mergeHelper(
-		BTreeNode<K, V, CompareFn>& parent,
-		BTreeNode<K, V, CompareFn>& left_node,
-		BTreeNode<K, V, CompareFn>& right_node
+		BTreeNode<K, V, CompareFn>* parent,
+		BTreeNode<K, V, CompareFn>* left_node,
+		BTreeNode<K, V, CompareFn>* right_node
 	);
 
     // only called for adding to a TreeLeafNode, so const V&
@@ -706,7 +706,7 @@ private:
 	}
 
 	bool neq(const K& k1, const K& k2) {
-		return !(eq(k1, k2));
+		return !(this->eq(k1, k2));
 	}
 
 
@@ -735,7 +735,7 @@ public:
 
 	V searchElem(const K& key);
 	void insertElem(const K& key, const V& value);
-	void deleteElem(const K& key);
+	void deleteElem(K& key);
 	void clearTree();
 
 	size_type size() {
@@ -1115,11 +1115,11 @@ void BTree<K, V, CompareFn>::insertElem(const K& new_key, const V& new_value) {
 
 
 template <typename K, typename V, typename CompareFn>
-void BTree<K, V, CompareFn>::deleteElem(const K& remove_key) {
+void BTree<K, V, CompareFn>::deleteElem(K& remove_key) {
 
 	std::list<K> key_list;
 	std::list<blockOffsetPair> block_pair_list;
-	BTreeNode<K, V, CompareFn>* trav, next_node, temp = nullptr;
+	BTreeNode<K, V, CompareFn> *trav, *next_node, *temp = nullptr;
 	K replacement_key;
 	blockOffsetPair delete_pair;
 
@@ -1146,7 +1146,7 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key) {
 		}
 		next_node = this->getNodeFromBlockNum(next_block_num);
 
-		if (next_node->isLeaf()) {			
+		if (next_node->isLeaf()) {
 			delete_pair = next_node->removeKey(remove_key);
 			this->adjustLeaf(trav, next_node);
 
@@ -1155,7 +1155,7 @@ void BTree<K, V, CompareFn>::deleteElem(const K& remove_key) {
 				std::list<K> child_keys;
 				blocknum_t least = trav->getSmallestKeyBlockNo();
 
-				BTreeNode<K, V, CompareFn>* first_child = this->getNodeFromBlockNum(least);
+				BTreeNode<K, V, CompareFn> *first_child = this->getNodeFromBlockNum(least);
 				replacement_key = first_child->getSmallestKey();
 
 				temp->replaceKey(remove_key, replacement_key);
@@ -1315,7 +1315,7 @@ K TreeLeafNode<K, V, CompareFn>::findMedian() {
 
 template <typename K, typename V, typename CompareFn>
 BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitRoot(
-	BTreeNode<K, V, CompareFn>* child_to_split,
+	BTreeNode<K, V, CompareFn> *child_to_split,
 	const K& add_key
 ) {
 
@@ -1327,7 +1327,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitRoot(
 	blocknum_t new_block_num = buffered_file_internal->allotBlock();
 	BufferFrame* disk_block_new = buffered_file_internal->readBlock(new_block_num);
 	K median_key = child_to_split->findMedian();
-	BTreeNode<K, V, CompareFn>* new_node;
+	BTreeNode<K, V, CompareFn> *new_node;
 
 	std::list<blocknum_t> blockNumList, blockNumList_new;
 	std::list<blockOffsetPair> blockPairList, blockPairList_new;
@@ -1477,7 +1477,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitRoot(
 
 	child_to_split->setIsRoot(false);
 
-	if (cmpl(median_key, add_key)) {
+	if (this->cmpl(median_key, add_key)) {
 		return child_to_split;
 	} else {
 		return new_node;
@@ -1500,7 +1500,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	blocknum_t new_block_num = buffered_file_internal->allotBlock();
 	BufferFrame* disk_block_new = buffered_file_internal->readBlock(new_block_num);
 	K median_key = child_to_split->findMedian();
-	BTreeNode<K, V, CompareFn>* new_node;
+	BTreeNode<K, V, CompareFn> *new_node;
 
 	std::list<blocknum_t> blockNumList, blockNumList_new;
 	std::list<blockOffsetPair> blockPairList, blockPairList_new;
@@ -1658,7 +1658,7 @@ BTreeNode<K, V, CompareFn>* BTree<K, V, CompareFn>::splitChild(
 	// delete current_node;
 	// delete child_to_split;
 
-	if (cmpl(median_key, add_key)) {
+	if (this->cmpl(median_key, add_key)) {
 		return child_to_split;
 	} else {
 		return new_node;
@@ -1774,13 +1774,12 @@ void BTree<K,V,CompareFn>::adjustLeaf(
 	BTreeNode<K, V, CompareFn>* node_to_adjust
 ) {
 
-	BTreeNode<K, V, CompareFn>* left_sibling, right_sibling;
+	BTreeNode<K, V, CompareFn> *left_sibling, *right_sibling;
 	std::list<K> parent_key_list, node_key_list, left_sib_key_list, right_sib_key_list;
 	std::list<blocknum_t> parent_block_list; 
 	std::list<blockOffsetPair> node_block_list, left_sib_block_list, right_sib_block_list;
 	parent->getKeys(parent_key_list);
 	node_to_adjust->getKeys(node_key_list);
-	
 
 	typename std::list<K>::iterator node_key_iter, left_sib_key_iter, right_sib_key_iter;
 	typename std::list<blockOffsetPair>::iterator node_block_iter, left_sib_block_iter, right_sib_block_iter;
@@ -1869,7 +1868,7 @@ void BTree<K,V,CompareFn>::adjustLeaf(
 
 		} else {
 				// MERGE:
-			if (parent->isRoot() && parent_key_list.size() < 2) {
+			if ( ( parent->getIsRoot() ) && ( parent_key_list.size() < 2 )) {
 				// If parent is root and has only one key, 
 				//then merge parent and both its children into one node, 
 				// update root block number in ?? ANS: HEADER BLOCK!
@@ -1916,7 +1915,7 @@ void BTree<K,V,CompareFn>::adjustLeaf(
 					}
 
 					node_to_adjust->setKeys(node_key_list);
-					node_to_adjust->setBlockNumbers(node_block_list);
+					node_to_adjust->setBlockOffsetPairs(node_block_list);
 
 					//TODO: MAKE node_to_adjust the ROOT NODE
 
@@ -1944,7 +1943,7 @@ template <typename K, typename V, typename CompareFn>
 void BTree<K,V,CompareFn>::adjustInternal(
 	BTreeNode<K, V, CompareFn>* parent, BTreeNode<K, V, CompareFn>* node_to_adjust
 ) {
-	BTreeNode<K, V, CompareFn>* left_sibling = nullptr, right_sibling = nullptr;
+	BTreeNode<K, V, CompareFn> *left_sibling = nullptr, *right_sibling = nullptr;
 
 	//key lists
 	std::list<K> parent_key_list, node_key_list, left_sib_key_list, right_sib_key_list;
@@ -1991,11 +1990,11 @@ void BTree<K,V,CompareFn>::adjustInternal(
 			node_block_iter = node_block_list.begin();
 
 			left_sibling->getKeys(left_sib_key_list);
-			left_sibling->getBlockOffsetPairs(left_sib_block_list);
+			left_sibling->getBlockNumbers(left_sib_block_list);
 
 			//CRITICAL:
 			//TODO: is it possible to do curr = right_node
-			BTreeNode<K, V, CompareFn>* curr = right_sibling, new_node;
+			BTreeNode<K, V, CompareFn> *curr = right_sibling, *new_node;
 
 			while (! curr->isLeaf()) {
 				new_node = this->getNodeFromBlockNum(
@@ -2020,7 +2019,7 @@ void BTree<K,V,CompareFn>::adjustInternal(
 			node_block_list.insert(node_block_iter, *left_sib_block_iter);
 
 			node_to_adjust->setKeys(node_key_list);
-			node_to_adjust->setBlockOffsetPairs(node_block_list);
+			node_to_adjust->setBlockNumbers(node_block_list);
 
 			curr = right_sibling;
 
@@ -2041,7 +2040,7 @@ void BTree<K,V,CompareFn>::adjustInternal(
 			left_sib_block_iter = left_sib_block_list.erase(left_sib_block_iter);
 
 			left_sibling->setKeys(left_sib_key_list);
-			left_sibling->setBlockOffsetPairs(left_sib_block_list);
+			left_sibling->setBlockNumbers(left_sib_block_list);
 
 
 
@@ -2052,11 +2051,11 @@ void BTree<K,V,CompareFn>::adjustInternal(
 			right_sibling->getBlockNumbers(right_sib_block_list);	
 
 			right_sib_key_iter = right_sib_key_list.begin();
-			right_sib_block_list = right_sib_block_list.begin();
+			right_sib_block_iter = right_sib_block_list.begin();
 
 			//CRITICAL:
 			//TODO: is it possible to do curr = right_node
-			BTreeNode<K, V, CompareFn>* curr = right_sibling, new_node;
+			BTreeNode<K, V, CompareFn> *curr = right_sibling, *new_node;
 
 			while (! curr->isLeaf()) {
 				new_node = this->getNodeFromBlockNum(
@@ -2099,12 +2098,12 @@ void BTree<K,V,CompareFn>::adjustInternal(
 
 			delete curr;
 
-			parent->replaceKey(old_key, *right_sib_block_iter);
+			parent->replaceKey(old_key, replacement_key);
 
 
 		} else {
 
-			if ( parent->isRoot() && (parent->getSize() < 2) ) {
+			if ( parent->getIsRoot() && (parent->getSize() < 2) ) {
 				// If parent has only one key, then merge parent and both its children into one node
 				// node_to_adjust is eihter the leftmost child of root or right most child of root
 				//since num of keys in parent == 1
@@ -2131,7 +2130,7 @@ void BTree<K,V,CompareFn>::adjustInternal(
 					node_block_iter = node_block_list.begin();
 
 					left_sibling->getKeys(left_sib_key_list);
-					left_sibling->getBlockOffsetPairs(left_sib_block_list);
+					left_sibling->getBlockNumbers(left_sib_block_list);
 
 					//TODO: should it be parent_key_list.front() or *(parent_key_list.front())??
 					left_sib_key_list.push_back(parent_key_list.front());
@@ -2149,7 +2148,7 @@ void BTree<K,V,CompareFn>::adjustInternal(
 					node_block_iter = node_block_list.erase(node_block_iter);
 
 					left_sibling->setKeys(left_sib_key_list);
-					left_sibling->setBlockOffsetPairs(left_sib_block_list);
+					left_sibling->setBlockNumbers(left_sib_block_list);
 
 					//TODO: make left_sibling the root node
 
@@ -2158,7 +2157,7 @@ void BTree<K,V,CompareFn>::adjustInternal(
 					// CASE 2:
 
 					right_sibling->getKeys(right_sib_key_list);
-					right_sibling->getBlockOffsetPairs(right_sib_block_list);
+					right_sibling->getBlockNumbers(right_sib_block_list);
 
 					typename std::list<K>::iterator right_sib_key_iter = right_sib_key_list.begin();
 					typename std::list<blocknum_t>::iterator right_sib_block_iter = right_sib_block_list.begin();
@@ -2170,7 +2169,7 @@ void BTree<K,V,CompareFn>::adjustInternal(
 						node_key_list.push_back(*right_sib_key_iter);
 						node_block_list.push_back(*right_sib_block_iter);
 
-						right_sib_key_iter = right_sib_key_list.erase(right_sib_block_iter);
+						right_sib_key_iter = right_sib_key_list.erase(right_sib_key_iter);
 						right_sib_block_iter = right_sib_block_list.erase(right_sib_block_iter);
 					}
 
@@ -2203,9 +2202,9 @@ void BTree<K,V,CompareFn>::adjustInternal(
 // PARENT IS NOT IN ROOT CRITICAL CONDTITION
 template <typename K, typename V, typename CompareFn>
 void BTree<K, V, CompareFn>::mergeHelper(
-	BTreeNode<K, V, CompareFn>& parent,
-	BTreeNode<K, V, CompareFn>& left_node,
-	BTreeNode<K, V, CompareFn>& right_node
+	BTreeNode<K, V, CompareFn>* parent,
+	BTreeNode<K, V, CompareFn>* left_node,
+	BTreeNode<K, V, CompareFn>* right_node
 ) {
 	// left and right is relative order in the nodes to be merged
 	// ASSSUMING THAT PARENT IS NOT IN ROOT CRITICAL CONDITION!!!!!!!!!
@@ -2224,7 +2223,7 @@ void BTree<K, V, CompareFn>::mergeHelper(
 		std::list<blockOffsetPair> left_block_list, right_block_list;
 
 		typename std::list<K>::iterator right_key_iter = right_key_list.begin();
-		typename std::list<blockOffsetPair>::iterator right_block_iter = right_key_list.begin();
+		typename std::list<blockOffsetPair>::iterator right_block_iter = right_block_list.begin();
 
 		while(right_key_iter != right_key_list.end()) {
 			left_key_list.push_back(*right_key_iter);
@@ -2235,7 +2234,7 @@ void BTree<K, V, CompareFn>::mergeHelper(
 		}
 
 		left_node->setKeys(left_key_list);
-		left_node->setKeys(left_block_list);
+		left_node->setBlockOffsetPairs(left_block_list);
 
 
 	} else {
@@ -2244,11 +2243,11 @@ void BTree<K, V, CompareFn>::mergeHelper(
 		K extra_key;
 
 		typename std::list<K>::iterator right_key_iter = right_key_list.begin();
-		typename std::list<blocknum_t>::iterator right_block_iter = right_key_list.begin();
+		typename std::list<blocknum_t>::iterator right_block_iter = right_block_list.begin();
 
 		//CRITICAL:
 		//TODO: is it possible to do curr = right_node
-		BTreeNode<K, V, CompareFn>* curr = right_node, new_node;
+		BTreeNode<K, V, CompareFn> *curr = right_node, *new_node;
 
 		while (! curr->isLeaf()) {
 			new_node = this->getNodeFromBlockNum(
@@ -2276,13 +2275,13 @@ void BTree<K, V, CompareFn>::mergeHelper(
 		right_block_iter = right_block_list.erase(right_block_iter);
 
 		left_node->setKeys(left_key_list);
-		left_node->setKeys(left_block_list);
+		left_node->setBlockNumbers(left_block_list);
 
 	}
 
 	left_node->setNextBlockNo(right_node->getNextBlockNo());
 
-	BTreeNode<K, V, CompareFn>* succ_node = this->getNodeFromBlockNum(right_node->getNextBlockNo());
+	BTreeNode<K, V, CompareFn> *succ_node = this->getNodeFromBlockNum(right_node->getNextBlockNo());
 	succ_node->setPrevBlockNo(left_node_block_num);
 
 }
@@ -2303,10 +2302,10 @@ bool InternalNode<K,V,CompareFn>::containsKey(const K& find_key, blocknum_t& nex
 		key_iter != keyList.end();
 		key_iter++, block_iter++
 	) {
-		if (cmpl(*key_iter, find_key)) {
+		if (this->cmpl(*key_iter, find_key)) {
 			 next_block_number = *block_iter;
 			 return false;
-		} else if (eq(*key_iter, find_key)) {
+		} else if (this->eq(*key_iter, find_key)) {
 
 			// CRITICAL: since we assume that if the key is equal, we search in the 'right' block
 			// same is followed in insertion
@@ -2337,11 +2336,11 @@ void InternalNode<K,V,CompareFn>::replaceKey(K& remove_key, K& replacement_key) 
 		key_iter != (key_list).end();
 		// no increment, read comments below
 	) {
-		if (eq(*key_iter, *remove_key)) {
+		if (this->eq(*key_iter, remove_key)) {
 			key_iter = key_list.erase(key_iter);
 			key_list.insert(key_iter, replacement_key);
 			break;
-		} else if (cmpl(*key_iter, *remove_key)) {
+		} else if (this->cmpl(*key_iter, remove_key)) {
 			// if key > removeKey
 			break;
 		} else {
@@ -2354,7 +2353,7 @@ void InternalNode<K,V,CompareFn>::replaceKey(K& remove_key, K& replacement_key) 
 	// TODO: if this is done then we store the node even if num_keys < min_threshold, we may need to change this later
 	// COMMENT: Deven : We are just replacing, do we really need this TODO here ?
 	this->setKeys(key_list);
-	this->setBlockOffsetPairs(block_list);
+	this->setBlockNumbers(block_list);
 }
 
 // For now assuming this a method of TreeLeafNode
@@ -2375,11 +2374,11 @@ blockOffsetPair TreeLeafNode<K, V, CompareFn>::removeKey(const K& remove_key) {
 		key_iter != (key_list).end();
 		// no increment, read comments below
 	) {
-		if (eq(*key_iter, remove_key)) {
+		if (this->eq(*key_iter, remove_key)) {
 			key_iter = key_list.erase(key_iter);
 			delete_pair = *block_iter;
 			block_iter = block_pair_list.erase(block_iter);
-		} else if (cmpl(*key_iter, remove_key)) {
+		} else if (this->cmpl(*key_iter, remove_key)) {
 			// if key > remove_key
 			break;
 		} else {
@@ -2417,7 +2416,7 @@ K BTree<K, V, CompareFn>::getOldKey(
 	right_block_iter++;
 
 	while(1){
-		if(eq(*left_block_iter, left_child_block_num) && eq(*right_block_iter, right_child_block_num)){
+		if(this->eq(*left_block_iter, left_child_block_num) && this->eq(*right_block_iter, right_child_block_num)){
 			break;
 		} else {
 			parent_key_iter++;

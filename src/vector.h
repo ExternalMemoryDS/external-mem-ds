@@ -1,4 +1,4 @@
-#include "buffer.h"
+#include "buffer2.h"
 #include <iterator>
 #include <stdexcept>
 #include <stddef.h>
@@ -12,7 +12,7 @@ private:
 	const size_t block_size;
 	const size_t element_size;
 	const size_t num_elements_per_block;
-	BufferedFile* buffered_file;
+	BufferedFile<int, blocksize_t, blocksize_t>* buffered_file;
 	size_type sz;
 
 public:
@@ -105,18 +105,24 @@ public:
 
 	vector(const char* pathname, size_type blocksize) : block_size(blocksize), element_size(sizeof(T)),
 		sz(0), num_elements_per_block(blocksize/(sizeof(T))) {
-		buffered_file = new BufferedFile(pathname, block_size, block_size*10);
+		buffered_file = new BufferedFile<int, block_size, block_size*10>(pathname);
 		
 		// dirty way to decode the header. reading size from header.
-		BufferFrame* header = buffered_file->readHeader();
-		sz = BufferedFrameReader::read<size_type>(header, sizeof(long));
+		//BufferFrame* header = buffered_file->readHeader();
+		//sz = BufferedFrameReader::read<size_type>(header, sizeof(long));
+		
+		sz = buffered_file->getHeader();
 	}
 	
 	~vector()
 	{
 		// update size of vector in header.
-		BufferedFrameWriter::write<size_type>(buffered_file->readHeader(), sizeof(long), sz);
-		buffered_file->writeHeader();
+		//BufferedFrameWriter::write<size_type>(buffered_file->readHeader(), sizeof(long), sz);
+
+		//buffered_file->writeHeader();
+
+		buffered_file->setHeader(&sz);
+		buffered_file->flushHeader();
 		
 		delete buffered_file;
 	}
@@ -149,16 +155,17 @@ void vector<T>::push_back(const T& elem) {
 	long block_number = (sz / num_elements_per_block) + 1;
 	long block_offset = (sz % num_elements_per_block) * element_size;
 	
-	BufferFrame* disk_block;
+	FrameData<block_size>* disk_block;
 	
 	if(block_offset==0) {
-		long new_block = buffered_file->allotBlock();
+		block_t new_block = buffered_file->allotNewBlock();
 		disk_block = buffered_file->readBlock(new_block);
 	} else {
 		disk_block = buffered_file->readBlock(block_number);
 	}
 	
-	BufferedFrameWriter::write<T>(disk_block, block_offset, elem);
+	//BufferedFrameWriter::write<T>(disk_block, block_offset, elem);
+	disk_block[block_offset] = elem;
 	
 	sz++;
 }
@@ -191,9 +198,9 @@ T& vector<T>::operator[] (vector<T>::size_type n) {
 	long block_number = (n / num_elements_per_block) + 1;
 	long block_offset = (n % num_elements_per_block) * element_size;
 	
-	BufferFrame* buff = buffered_file->readBlock(block_number);
+	FrameData<block_size>* buff = buffered_file->readBlock(block_number);
 	
-	return *(BufferedFrameReader::readPtr<T>(buff, block_offset));
+	return &(T)buff[block_offset];
 }
 
 template <typename T>
@@ -216,7 +223,8 @@ void vector<T>::erase(vector<T>::iterator start, vector<T>::iterator end)
 	long new_size = sz - (last-first) -1;
 	const void* copy_data;
 	
-	BufferFrame *disk_block, *copy_block;
+	FrameData<blksize>* disk_block;
+	FrameData<blksize>* copy_block;
 	
 	while(num_element_shift > 0)
 	{
@@ -228,21 +236,27 @@ void vector<T>::erase(vector<T>::iterator start, vector<T>::iterator end)
 		disk_block = buffered_file->readBlock(first_block_number);
 		copy_block = buffered_file->readBlock(copy_block_number);
 		
-		copy_data = BufferedFrameReader::readRawData(copy_block, copy_block_offset*element_size);
+		//copy_data = BufferedFrameReader::readRawData(copy_block, copy_block_offset*element_size);
 		if((num_elements_per_block-copy_block_offset) <= num_element_shift)
 		{
 			if((num_elements_per_block-first_block_offset) <= (num_elements_per_block-copy_block_offset))
 			{
-				BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset * element_size, 
-											 (num_elements_per_block - first_block_offset) * element_size);
+				//BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset * element_size, 
+				//							 (num_elements_per_block - first_block_offset) * element_size);
+
+				std::memmove(disk_block[first_block_offset*element_size], copy_data[0], (num_elements_per_block - first_block_offset) * element_size);
+				//disk_block[first_block_offset*element_size] = (T)copy_block[]
 				
 				first += (num_elements_per_block - first_block_offset);
 				copy_pos += (num_elements_per_block - first_block_offset);
 			}
 			else
 			{
-				BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset*element_size,
-											 (num_elements_per_block - copy_block_offset) * element_size);
+				//BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset*element_size,
+				//							 (num_elements_per_block - copy_block_offset) * element_size);
+
+				std::memmove(disk_block[first_block_offset*element_size], copy_data[0], (num_elements_per_block - copy_block_offset) * element_size);
+
 				first += (num_elements_per_block - copy_block_offset);
 				copy_pos += (num_elements_per_block - copy_block_offset);
 			}
@@ -251,19 +265,28 @@ void vector<T>::erase(vector<T>::iterator start, vector<T>::iterator end)
 		{
 			if((num_elements_per_block-first_block_offset) <= num_element_shift)
 			{
-				BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset * element_size, 
-											 (num_elements_per_block - first_block_offset) * element_size);
+				//BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset * element_size, 
+				//							 (num_elements_per_block - first_block_offset) * element_size);
+
+				std::memmove(disk_block[first_block_offset*element_size], copy_data[0], (num_elements_per_block - first_block_offset) * element_size);
 				
 				first += (num_elements_per_block - first_block_offset);
 				copy_pos += (num_elements_per_block - first_block_offset);
 			}
 			else
 			{
-				BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset*element_size,
-											 (num_element_shift) * element_size);				
+				//BufferedFrameWriter::memmove(disk_block, copy_data, first_block_offset*element_size,
+				//							 (num_element_shift) * element_size);
+
+				std::memmove(disk_block[first_block_offset*element_size], copy_data[0], num_element_shift * element_size);
+
 				first += (num_element_shift);
-				BufferedFrameWriter::memset(disk_block, 0, (first % num_elements_per_block) * element_size,
-											(num_elements_per_block - (first % num_elements_per_block)) * element_size);
+				//BufferedFrameWriter::memset(disk_block, 0, (first % num_elements_per_block) * element_size,
+				//							(num_elements_per_block - (first % num_elements_per_block)) * element_size);
+
+				disk_block->parent_frame->markDirty();
+				std::memset(disk_block[(first % num_elements_per_block) * element_size], 0, (num_elements_per_block - (first % num_elements_per_block)) * element_size);
+
 				copy_pos += (num_element_shift);
 			}
 		}
@@ -289,7 +312,7 @@ void vector<T>::insert(vector<T>::iterator pos, const T& elem)
 	
 	long insert_block_number = (position / num_elements_per_block) + 1;
 	long insert_block_offset = (position % num_elements_per_block) * element_size;
-	BufferFrame* disk_block = buffered_file->readBlock(insert_block_number);
+	FrameData<blksize>* disk_block = buffered_file->readBlock(insert_block_number);
 	
 	long last_block_number = (sz / num_elements_per_block) + 1;
 	long last_block_offset = (sz % num_elements_per_block) * element_size;
@@ -297,14 +320,18 @@ void vector<T>::insert(vector<T>::iterator pos, const T& elem)
 	if(last_block_offset == 0)
 		last_block_number -= 1;
 	
-	T overflow_element = BufferedFrameReader::read<T>(disk_block, (num_elements_per_block-1)*element_size);
+	T overflow_element = (T)disk_block[(num_elements_per_block-1)*element_size];
 	
-	BufferedFrameWriter::memmove( disk_block, 
-											    BufferedFrameReader::readRawData(disk_block, insert_block_offset ), 
-											    insert_block_offset + element_size, 
-											    (num_elements_per_block - (position % num_elements_per_block))*element_size );
+	//BufferedFrameWriter::memmove( disk_block, 
+	//										    BufferedFrameReader::readRawData(disk_block, insert_block_offset ), 
+	//										    insert_block_offset + element_size, 
+	//										    (num_elements_per_block - (position % num_elements_per_block))*element_size );
+
+	std::memmove(disk_block[insert_block_offset + element_size], disk_block[insert_block_offset], (num_elements_per_block - (position % num_elements_per_block))*element_size);
+
 	
-	BufferedFrameWriter::write<T>(disk_block, insert_block_offset, elem);
+	//BufferedFrameWriter::write<T>(disk_block, insert_block_offset, elem);
+	disk_block[insert_block_offset] = elem;
 	
 	insert_block_number++;
 	
@@ -313,13 +340,16 @@ void vector<T>::insert(vector<T>::iterator pos, const T& elem)
 	while(insert_block_number <= last_block_number)
 	{
 		disk_block = buffered_file->readBlock(insert_block_number);
-		overflow_element2 = BufferedFrameReader::read<T>(disk_block, (num_elements_per_block-1)*element_size);
+		overflow_element2 = (T)disk_block[(num_elements_per_block-1)*element_size];
 		
-		BufferedFrameWriter::memmove( disk_block, 
-													BufferedFrameReader::readRawData(disk_block, 0), 
-													element_size, (num_elements_per_block-1)*element_size );
+		//BufferedFrameWriter::memmove( disk_block, 
+		//											BufferedFrameReader::readRawData(disk_block, 0), 
+		//											element_size, (num_elements_per_block-1)*element_size );
+
+		std::memmove(disk_block[element_size], disk_block[0], (num_elements_per_block-1)*element_size);
 		
-		BufferedFrameWriter::write<T>(disk_block, 0, overflow_element);
+		//BufferedFrameWriter::write<T>(disk_block, 0, overflow_element);
+		disk_block[0] = overflow_element;
 		
 		overflow_element = overflow_element2;
 		
@@ -328,10 +358,11 @@ void vector<T>::insert(vector<T>::iterator pos, const T& elem)
 	
 	if(last_block_offset == 0)
 	{
-		long new_block = buffered_file->allotBlock();
+		block_t new_block = buffered_file->allotNewBlock();
 		disk_block = buffered_file->readBlock(new_block);
 		
-		BufferedFrameWriter::write<T>(disk_block, 0, overflow_element);
+		//BufferedFrameWriter::write<T>(disk_block, 0, overflow_element);
+		disk_block[0] = overflow_element;
 	}
 	
 	sz ++;
@@ -348,16 +379,16 @@ void vector<T>::insert(vector<T>::iterator pos, InputIterator first, InputIterat
 	auto num_element_insert = std::distance(first, last);
 	
 	size_type new_size = sz + num_element_insert;
-	long new_last_block = ((new_size/num_elements_per_block) + 1);
-	long new_last_offset = new_size%num_elements_per_block;
-	long last_block = (((sz-1)/num_elements_per_block) + 1);	
+	block_t new_last_block = ((new_size/num_elements_per_block) + 1);
+	block_t new_last_offset = new_size%num_elements_per_block;
+	block_t last_block = (((sz-1)/num_elements_per_block) + 1);	
 	
 	if(new_last_block != last_block)
 	{
-		while(new_last_block != buffered_file->allotBlock());
+		while(new_last_block != buffered_file->allotNewBlock());
 		
-		BufferFrame* new_disk_block;
-		BufferFrame* copy_disk_block;
+		FrameData<blksize>* new_disk_block;
+		FrameData<blksize>* copy_disk_block;
 		
 		const void* copy_data;
 		
@@ -375,18 +406,22 @@ void vector<T>::insert(vector<T>::iterator pos, InputIterator first, InputIterat
 			if(((num_elements_per_block-copy_offset)+1) < new_last_offset)
 			{
 				copy_disk_block = buffered_file->readBlock(copy_block+1);
-				copy_data = BufferedFrameReader::readRawData(copy_disk_block, 0);
+				//copy_data = BufferedFrameReader::readRawData(copy_disk_block, 0);
+				copy_data = (void*)copy_disk_block[0];
 				
-				BufferedFrameWriter::memmove(new_disk_block, copy_data, 
-														((num_elements_per_block-copy_offset))*element_size,
-														(new_last_offset-((num_elements_per_block-copy_offset)))*element_size
-														);
+				//BufferedFrameWriter::memmove(new_disk_block, copy_data, 
+				//										((num_elements_per_block-copy_offset))*element_size,
+				//										(new_last_offset-((num_elements_per_block-copy_offset)))*element_size
+				//										);
+				std::memmove(new_disk_block[(num_elements_per_block-copy_offset)*element_size], copy_data[0], (new_last_offset-(num_elements_per_block-copy_offset))*element_size);
 			}
 			
 			copy_disk_block = buffered_file->readBlock(copy_block);
-			copy_data = BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
-			BufferedFrameWriter::memmove(new_disk_block, copy_data, 0,
-													(num_elements_per_block-copy_offset)*element_size);
+			//copy_data = BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
+			copy_data = copy_disk_block[copy_offset*element_size];
+			//BufferedFrameWriter::memmove(new_disk_block, copy_data, 0,
+			//										(num_elements_per_block-copy_offset)*element_size);
+			std::memmove(new_disk_block[0], copy_data, (num_elements_per_block-copy_offset)*element_size);
 			
 			new_last_block--;
 			new_last_offset = num_elements_per_block;
@@ -403,24 +438,30 @@ void vector<T>::insert(vector<T>::iterator pos, InputIterator first, InputIterat
 		if((num_elements_per_block-copy_offset+1) >= num_left_insert)
 		{
 			copy_disk_block = buffered_file->readBlock(copy_block);
-			copy_data = BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
-			BufferedFrameWriter::memmove(new_disk_block, copy_data, 
-													   new_block_offset*element_size, 
-													   num_left_insert*element_size);
+			//copy_data = BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
+			copy_data = copy_disk_block[copy_offset*element_size];
+			//BufferedFrameWriter::memmove(new_disk_block, copy_data, 
+			//										   new_block_offset*element_size, 
+			//										   num_left_insert*element_size);
+			std::memmove(new_disk_block[new_block_offset*element_size], copy_data, num_left_insert*element_size);
 		}
 		else
 		{
 			copy_disk_block = buffered_file->readBlock(copy_block+1);
-			copy_data = BufferedFrameReader::readRawData(copy_disk_block, 0);
-			BufferedFrameWriter::memmove(new_disk_block, copy_data, 
-													   (new_block_offset + (num_elements_per_block-copy_offset+1))*element_size,
-													   (num_left_insert - (new_block_offset + (num_elements_per_block-copy_offset+1)))*element_size);
-			
+			//copy_data = BufferedFrameReader::readRawData(copy_disk_block, 0);
+			copy_data = copy_disk_block[0];
+			//BufferedFrameWriter::memmove(new_disk_block, copy_data, 
+			//										   (new_block_offset + (num_elements_per_block-copy_offset+1))*element_size,
+			//										   (num_left_insert - (new_block_offset + (num_elements_per_block-copy_offset+1)))*element_size);
+			std::memmove(new_disk_block[(new_block_offset + (num_elements_per_block-copy_offset+1))*element_size], copy_data, (num_left_insert - (new_block_offset + (num_elements_per_block-copy_offset+1)))*element_size);
+
 			copy_disk_block = buffered_file->readBlock(copy_block);
-			copy_data = BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
-			BufferedFrameWriter::memmove(new_disk_block, copy_data,
-													   new_block_offset*element_size,
-													(num_element_insert-copy_offset+1)*element_size);
+			//copy_data = BufferedFrameReader::readRawData(copy_disk_block, copy_offset*element_size);
+			copy_data = copy_disk_block[copy_offset*element_size];
+			//BufferedFrameWriter::memmove(new_disk_block, copy_data,
+			//										   new_block_offset*element_size,
+			//										(num_element_insert-copy_offset+1)*element_size);
+			std::memmove(new_disk_block[new_block_offset*element_size], copy_data, (num_element_insert-copy_offset+1)*element_size);
 		}
 		
 		copy_position = position;
@@ -429,7 +470,8 @@ void vector<T>::insert(vector<T>::iterator pos, InputIterator first, InputIterat
 			copy_block = (copy_position/num_elements_per_block) + 1;
 			copy_offset = (copy_position%num_elements_per_block) * element_size;
 			copy_disk_block = buffered_file->readBlock(copy_block);
-			BufferedFrameWriter::write<T>(copy_disk_block, copy_offset,(T)(*first));
+			//BufferedFrameWriter::write<T>(copy_disk_block, copy_offset,(T)(*first));
+			copy_disk_block[copy_offset] = (T)(*first);
 			copy_position ++;
 			first ++;
 		}
@@ -439,16 +481,19 @@ void vector<T>::insert(vector<T>::iterator pos, InputIterator first, InputIterat
 	{
 		const void* copy_data;
 		BufferFrame* disk_block = buffered_file->readBlock(last_block);
-		copy_data = BufferedFrameReader::readRawData(disk_block, 
-																   (position%num_elements_per_block)*element_size);
-		BufferedFrameWriter::memmove(disk_block, copy_data, 
-												   ((position + num_element_insert)%num_elements_per_block)*element_size,
-												   ((sz%num_elements_per_block) - (position%num_elements_per_block))*element_size);
+		//copy_data = BufferedFrameReader::readRawData(disk_block, 
+		//														   (position%num_elements_per_block)*element_size);
+		copy_data = disk_block[(position%num_elements_per_block)*element_size];
+		//BufferedFrameWriter::memmove(disk_block, copy_data, 
+		//										   ((position + num_element_insert)%num_elements_per_block)*element_size,
+		//										   ((sz%num_elements_per_block) - (position%num_elements_per_block))*element_size);
+		std::memmove(disk_block[((position + num_element_insert)%num_elements_per_block)*element_size], copy_data, ((sz%num_elements_per_block) - (position%num_elements_per_block))*element_size)
 		while(first!=last)
 		{
-				BufferedFrameWriter::write<T>(disk_block, 
-															(position%num_elements_per_block)*element_size, 
-															(T)(*first));
+				//BufferedFrameWriter::write<T>(disk_block, 
+				//											(position%num_elements_per_block)*element_size, 
+				//											(T)(*first));
+				disk_block[(position%num_elements_per_block)*element_size] = (T)(*first));
 				position++;
 				first++;
 		}

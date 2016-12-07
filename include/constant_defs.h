@@ -1,0 +1,9 @@
+#ifndef _CONSTANT_DEFS
+#define _CONSTANT_DEFS
+
+#define DEFAULT_BLKSIZE 4096
+#define DEFAILT_RESERVEDMEM 1048576
+#define VECTOR_TYPE 1
+#define BTREE_TYPE 2
+
+#endif

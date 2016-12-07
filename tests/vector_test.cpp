@@ -8,8 +8,11 @@
 
 int main()
 {
-	vector<int> exvec("./randvec", (size_t) 4096);
-	
+	try
+	{
+		vector<int> exvec("./randvec", (size_t) 4096);
+
+
 	std::default_random_engine generator;
 	std::uniform_int_distribution<int> distribution(1,1000);
 	
@@ -71,6 +74,11 @@ int main()
 	
 	std::cout << std::endl;
 	std::cout << exvec.size() << std::endl;
+	}
+	catch(const char* msg)
+	{
+		std::cout << msg << std::endl;
+	}
 	
 	return 0;
 }

@@ -90,6 +90,7 @@ private:
 	template <typename T>
 	BufferFrameIOHelper& operator= (const T& rhs)
 	{
+
 		BufferFrame<blocksize>::memcpy(frame, &rhs, offset, sizeof(rhs));
 	}
 
